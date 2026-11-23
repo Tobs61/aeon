@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=aeon
+Comment=Calendar done right.
+Exec=aeon
+Icon=aeon
+Terminal=false
+Type=Application
+Categories=Office;Calendar;
+MimeType=text/calendar;
+StartupNotify=true
+StartupWMClass=aeon

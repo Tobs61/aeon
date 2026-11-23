@@ -1,0 +1,30 @@
+app-id: com.kael.aeon
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: aeon
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --share=network
+  - --filesystem=xdg-documents
+  - --filesystem=xdg-download
+
+modules:
+  - name: aeon
+    buildsystem: simple
+    build-commands:
+      - ar x Aeon_0.1.0_amd64.deb
+      - tar -xf data.tar.* -C /
+      - mv /usr/bin/aeon /app/bin/aeon
+      - mkdir -p /app/share/applications /app/share/icons
+      - cp -r /usr/share/icons/hicolor /app/share/icons/
+      - install -Dm644 /usr/share/applications/Aeon.desktop /app/share/applications/com.kael.aeon.desktop
+      - desktop-file-edit --set-icon=com.kael.aeon /app/share/applications/com.kael.aeon.desktop
+      - mv /app/share/icons/hicolor/scalable/apps/aeon.svg /app/share/icons/hicolor/scalable/apps/com.kael.aeon.svg
+    sources:
+      - type: file
+        path: src-tauri/target/release/bundle/deb/Aeon_0.1.0_amd64.deb
