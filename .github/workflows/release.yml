@@ -1,0 +1,207 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Build Linux (.deb, .rpm, .appimage, .flatpak)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux and Flatpak build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            flatpak \
+            flatpak-builder \
+            binutils \
+            desktop-file-utils \
+            elfutils
+
+      - name: Install Flathub runtime and SDK
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y --noninteractive flathub org.gnome.Platform//47 org.gnome.Sdk//47
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run lint
+
+      - name: Build Linux installers (.deb, .rpm, .appimage, .flatpak)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: bun run build -- --target .deb,.rpm,.appimage,.flatpak
+
+      - name: Collect Linux artifacts
+        run: |
+          mkdir -p artifacts
+          cp src-tauri/target/release/bundle/deb/*.deb artifacts/
+          cp src-tauri/target/release/bundle/rpm/*.rpm artifacts/
+          cp src-tauri/target/release/bundle/appimage/*.AppImage artifacts/
+          cp dist-flatpak/*.flatpak artifacts/
+          ls -lh artifacts/
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-linux
+          path: artifacts/*
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS (.dmg)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run lint
+
+      - name: Build macOS installer (.dmg)
+        run: bun run build -- --target .dmg
+
+      - name: Collect macOS artifacts
+        run: |
+          mkdir -p artifacts
+          cp src-tauri/target/release/bundle/dmg/*.dmg artifacts/
+          ls -lh artifacts/
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-macos
+          path: artifacts/*
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows (.exe, .msi)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check
+        run: bun run lint
+
+      - name: Build Windows installers (.exe, .msi)
+        run: bun run build -- --target .exe,.msi
+
+      - name: Collect Windows artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Copy-Item "src-tauri/target/release/bundle/nsis/*.exe" artifacts/
+          Copy-Item "src-tauri/target/release/bundle/msi/*.msi" artifacts/
+          Get-ChildItem artifacts/
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-windows
+          path: artifacts/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-macos, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh release-assets/
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: release-assets/*

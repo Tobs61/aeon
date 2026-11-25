@@ -40,9 +40,9 @@ function readAppVersion(): string {
   try {
     const pkgRaw = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8');
     const pkg = JSON.parse(pkgRaw) as { version?: string };
-    return pkg.version || '0.1.15';
+    return pkg.version || '0.1.16';
   } catch {
-    return '0.1.15';
+    return '0.1.16';
   }
 }
 
@@ -166,11 +166,13 @@ function buildFlatpak(version: string, dryRun: boolean, debAlreadyBuilt: boolean
     fs.mkdirSync(outDir, { recursive: true });
   }
 
-  runStep(
-    'flatpak-builder',
-    ['--force-clean', `--repo=${repoDir}`, buildDir, 'com.kael.aeon.yml'],
-    dryRun
-  );
+  const flatpakBuilderArgs = ['--force-clean'];
+  if (process.env.CI === 'true' || !fs.existsSync('/dev/fuse')) {
+    flatpakBuilderArgs.push('--disable-rofiles-fuse');
+  }
+  flatpakBuilderArgs.push(`--repo=${repoDir}`, buildDir, 'com.kael.aeon.yml');
+
+  runStep('flatpak-builder', flatpakBuilderArgs, dryRun);
   runStep(
     'flatpak',
     ['build-bundle', repoDir, bundlePath, 'com.kael.aeon'],
