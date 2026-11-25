@@ -17,14 +17,15 @@ modules:
   - name: aeon
     buildsystem: simple
     build-commands:
-      - ar x aeon_0.1.16_amd64.deb || ar x Aeon_0.1.16_amd64.deb
-      - tar -xf data.tar.* -C /
-      - mkdir -p /app/bin /app/share/applications /app/share/icons
-      - mv /usr/bin/aeon /app/bin/aeon
-      - cp -r /usr/share/icons/hicolor /app/share/icons/
-      - '[ -f /usr/share/applications/aeon.desktop ] && DESK=/usr/share/applications/aeon.desktop || DESK=/usr/share/applications/Aeon.desktop; install -Dm644 "$DESK" /app/share/applications/com.kael.aeon.desktop'
+      - ar x aeon_0.1.17_amd64.deb || ar x Aeon_0.1.17_amd64.deb
+      - mkdir -p unpacked /app/bin /app/share/applications /app/share/icons
+      - tar -xf data.tar.* -C unpacked
+      - install -Dm755 unpacked/usr/bin/aeon /app/bin/aeon
+      - cp -r unpacked/usr/share/icons/hicolor /app/share/icons/
+      - rm -rf /app/share/icons/hicolor/*@2
+      - '[ -f unpacked/usr/share/applications/aeon.desktop ] && DESK=unpacked/usr/share/applications/aeon.desktop || DESK=unpacked/usr/share/applications/Aeon.desktop; install -Dm644 "$DESK" /app/share/applications/com.kael.aeon.desktop'
       - desktop-file-edit --set-icon=com.kael.aeon /app/share/applications/com.kael.aeon.desktop
-      - for f in /app/share/icons/hicolor/*/apps/aeon.*; do [ -e "$f" ] && mv "$f" "${f%/*}/com.kael.aeon.${f##*.}"; done
+      - for f in /app/share/icons/hicolor/*/apps/aeon.* /app/share/icons/hicolor/*/apps/Aeon.*; do if [ -e "$f" ]; then mv "$f" "${f%/*}/com.kael.aeon.${f##*.}"; fi; done
     sources:
       - type: file
-        path: src-tauri/target/release/bundle/deb/aeon_0.1.16_amd64.deb
+        path: src-tauri/target/release/bundle/deb/aeon_0.1.17_amd64.deb

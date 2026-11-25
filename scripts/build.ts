@@ -40,9 +40,9 @@ function readAppVersion(): string {
   try {
     const pkgRaw = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8');
     const pkg = JSON.parse(pkgRaw) as { version?: string };
-    return pkg.version || '0.1.16';
+    return pkg.version || '0.1.17';
   } catch {
-    return '0.1.16';
+    return '0.1.17';
   }
 }
 
