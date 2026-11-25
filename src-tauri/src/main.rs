@@ -205,52 +205,6 @@ fn resolve_inside_root(root: &Path, relative_path: &str) -> Result<PathBuf, Stri
     Ok(target)
 }
 
-fn seed_default_calendars_if_empty(root: &Path, cfg: &mut AeonConfig) -> Result<(), String> {
-    let has_entries = fs::read_dir(root)
-        .map_err(|e| format!("Failed to read calendars directory: {e}"))?
-        .next()
-        .is_some();
-    if has_entries {
-        return Ok(());
-    }
-
-    let starters = [
-        (
-            "personal/personal.ics",
-            "emerald",
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Aeon Calendar//Debian Local ICS 1.0//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Personal\r\nBEGIN:VEVENT\r\nUID:aeon-p101@local\r\nDTSTAMP:20261116T000000Z\r\nSUMMARY:Morning Trail Run\r\nLOCATION:Forest Park Loop\r\nDESCRIPTION:5km steady pace before work.\r\nDTSTART:20261116T070000\r\nDTEND:20261116T075000\r\nRRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-        ),
-        (
-            "work/work.ics",
-            "blue",
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Aeon Calendar//Debian Local ICS 1.0//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Work\r\nBEGIN:VEVENT\r\nUID:aeon-w201@local\r\nDTSTAMP:20261116T000000Z\r\nSUMMARY:Engineering Sprint Planning\r\nLOCATION:Room 3B / Matrix Call\r\nDESCRIPTION:Triage milestone tickets and review Q4 deliverables.\r\nDTSTART:20261116T100000\r\nDTEND:20261116T113000\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-        ),
-        (
-            "community/debian.ics",
-            "rose",
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Aeon Calendar//Debian Local ICS 1.0//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Debian\r\nBEGIN:VEVENT\r\nUID:aeon-d301@local\r\nDTSTAMP:20261121T000000Z\r\nSUMMARY:Unattended Upgrades & Snapshot\r\nLOCATION:thinkpad-t14 (Debian Bookworm)\r\nDESCRIPTION:Run apt update && apt full-upgrade, verify btrfs root snapshot.\r\nDTSTART:20261121T110000\r\nDTEND:20261121T120000\r\nRRULE:FREQ=WEEKLY;BYDAY=SA\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-        ),
-    ];
-
-    for (rel, color, content) in starters {
-        let dest = resolve_inside_root(root, rel)?;
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create calendar directory: {e}"))?;
-        }
-        fs::write(&dest, content).map_err(|e| format!("Failed to write starter .ics: {e}"))?;
-        cfg.prefs.insert(
-            calendar_name_key(rel),
-            CalendarPref {
-                color: Some(color.to_string()),
-                visible: Some(true),
-            },
-        );
-    }
-    eprintln!("[aeon] INFO  Seeded starter .ics calendars in {}", root.display());
-    Ok(())
-}
-
 fn verify_folder_read_write(dir: &Path) -> Result<(), String> {
     fs::read_dir(dir).map_err(|e| format!("Cannot read selected folder: {e}"))?;
     let probe = dir.join(format!(".aeon-write-check-{}", std::process::id()));
@@ -314,12 +268,7 @@ fn reset_calendar_folder(app: AppHandle) -> Result<TauriFolderInfo, String> {
 #[tauri::command]
 fn scan_ics_folder(app: AppHandle) -> Result<TauriScanResult, String> {
     let (root, is_default) = resolve_active_root(&app)?;
-    let mut cfg = load_config(&app);
-
-    if is_default {
-        seed_default_calendars_if_empty(&root, &mut cfg)?;
-        save_config(&app, &cfg)?;
-    }
+    let cfg = load_config(&app);
 
     let mut discovered: Vec<(String, String, PathBuf)> = Vec::new();
     for entry in WalkDir::new(&root)
@@ -505,6 +454,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle();
             if let Some(window) = app.get_webview_window("main") {

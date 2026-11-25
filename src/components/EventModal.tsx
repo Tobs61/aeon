@@ -27,8 +27,8 @@ const REMINDER_OPTIONS: Array<{
   label: string;
   value: number | null | undefined;
 }> = [
-  { label: 'Use default reminder', value: undefined },
-  { label: 'No reminder', value: null },
+  { label: 'Use default timer', value: undefined },
+  { label: 'No timer', value: null },
   { label: 'At start time', value: 0 },
   { label: '5 minutes before', value: 5 },
   { label: '10 minutes before', value: 10 },
@@ -121,7 +121,7 @@ export function EventModal({
     if (typeof draft.reminderMinutes === 'number') {
       return `${draft.reminderMinutes} minutes before`;
     }
-    return 'Use default reminder';
+    return 'Use default timer';
   }, [draft.reminderMinutes]);
 
   const computedEndForIcs = useMemo(

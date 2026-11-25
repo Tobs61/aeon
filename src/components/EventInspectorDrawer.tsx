@@ -228,7 +228,7 @@ export function EventInspectorDrawer({
                 <Bell className="w-4 h-4 text-neutral-400 mt-0.5 shrink-0" />
                 <div className="text-sm text-neutral-800 dark:text-neutral-200 leading-snug">
                   {event.reminderMinutes === null
-                    ? 'No reminder'
+                    ? 'No timer'
                     : formatReminderLeadLabel(event.reminderMinutes)}
                 </div>
               </div>

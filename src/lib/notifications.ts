@@ -1,5 +1,11 @@
+import {
+  isPermissionGranted as tauriIsPermissionGranted,
+  requestPermission as tauriRequestPermission,
+  sendNotification as tauriSendNotification,
+} from '@tauri-apps/plugin-notification';
 import { addDays, endOfDay, startOfDay } from './dateUtils.ts';
 import { expandEventsInRange } from './ics.ts';
+import { isTauriRuntime } from './tauriRuntime.ts';
 import type { IcsCalendar, IcsEvent, IcsOccurrence } from '../types/calendar.ts';
 
 export type DefaultReminderMinutes = -1 | 0 | 5 | 10 | 15 | 30 | 60 | 1440;
@@ -26,7 +32,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
   soundEnabled: true,
   desktopEnabled: true,
-  defaultReminderMinutes: 10,
+  defaultReminderMinutes: -1,
 };
 
 export function readNotificationSettings(): NotificationSettings {
@@ -71,7 +77,9 @@ export function writeNotificationSettings(
   return next;
 }
 
-export function readFiredNotificationIds(nowMs = Date.now()): Record<string, number> {
+export function readFiredNotificationIds(
+  nowMs = Date.now()
+): Record<string, number> {
   if (typeof window === 'undefined') return {};
   try {
     const raw = window.localStorage.getItem(FIRED_STORAGE_KEY);
@@ -104,7 +112,15 @@ export type DesktopPermissionState =
   | 'default'
   | 'unsupported';
 
-export function getDesktopNotificationPermission(): DesktopPermissionState {
+export async function getDesktopNotificationPermission(): Promise<DesktopPermissionState> {
+  if (isTauriRuntime()) {
+    try {
+      const granted = await tauriIsPermissionGranted();
+      return granted ? 'granted' : 'default';
+    } catch {
+      return 'unsupported';
+    }
+  }
   if (typeof window === 'undefined' || typeof Notification === 'undefined') {
     return 'unsupported';
   }
@@ -112,6 +128,16 @@ export function getDesktopNotificationPermission(): DesktopPermissionState {
 }
 
 export async function requestDesktopNotificationPermission(): Promise<DesktopPermissionState> {
+  if (isTauriRuntime()) {
+    try {
+      if (await tauriIsPermissionGranted()) {
+        return 'granted';
+      }
+      return await tauriRequestPermission();
+    } catch {
+      return 'unsupported';
+    }
+  }
   if (typeof window === 'undefined' || typeof Notification === 'undefined') {
     return 'unsupported';
   }
@@ -125,18 +151,35 @@ export async function requestDesktopNotificationPermission(): Promise<DesktopPer
   }
 }
 
-export function sendDesktopNotification(
+export async function sendDesktopNotification(
   title: string,
   body: string,
   tag: string,
   onClick?: () => void
-): void {
+): Promise<boolean> {
+  if (isTauriRuntime()) {
+    try {
+      let granted = await tauriIsPermissionGranted();
+      if (!granted) {
+        granted = (await tauriRequestPermission()) === 'granted';
+      }
+      if (!granted) return false;
+      tauriSendNotification({
+        title,
+        body,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   if (
     typeof window === 'undefined' ||
     typeof Notification === 'undefined' ||
     Notification.permission !== 'granted'
   ) {
-    return;
+    return false;
   }
   try {
     const notif = new Notification(title, {
@@ -151,13 +194,14 @@ export function sendDesktopNotification(
         notif.close();
       };
     }
+    return true;
   } catch {
-    // Ignore environments where Notification constructor is restricted
+    return false;
   }
 }
 
 export function formatReminderLeadLabel(minutes: number): string {
-  if (minutes < 0) return 'No reminder';
+  if (minutes < 0) return 'No timer';
   if (minutes === 0) return 'At start time';
   if (minutes < 60) return `${minutes} min before`;
   if (minutes === 60) return '1 hour before';

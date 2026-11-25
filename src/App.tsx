@@ -63,6 +63,7 @@ import {
   type NotificationSettings,
   readFiredNotificationIds,
   readNotificationSettings,
+  requestDesktopNotificationPermission,
   sendDesktopNotification,
   writeFiredNotificationIds,
   writeNotificationSettings,
@@ -339,6 +340,7 @@ export default function App() {
 
   const handleTestNotification = useCallback(async () => {
     const id = `aeon-test-${Date.now()}`;
+    void playNotificationSound();
     pushToast({
       id,
       title: 'Aeon Reminder Test',
@@ -346,13 +348,13 @@ export default function App() {
       colorKey: calendars[0]?.color ?? 'slate',
     });
     if (notificationSettings.desktopEnabled) {
-      sendDesktopNotification(
+      await requestDesktopNotificationPermission();
+      await sendDesktopNotification(
         'Aeon Reminder Test',
         'Notifications and chime are working.',
         id
       );
     }
-    await playNotificationSound();
   }, [calendars, notificationSettings.desktopEnabled, pushToast]);
 
   const scanActiveFolder = useCallback(
@@ -459,6 +461,10 @@ export default function App() {
       }
       writeFiredNotificationIds(firedNotificationsRef.current);
 
+      if (notificationSettings.soundEnabled) {
+        void playNotificationSound();
+      }
+
       for (const item of due) {
         const cal = calendars.find(
           (c) => c.id === item.occurrence.event.calendarId
@@ -479,7 +485,7 @@ export default function App() {
           const loc = item.occurrence.event.location
             ? ` · ${item.occurrence.event.location}`
             : '';
-          sendDesktopNotification(
+          void sendDesktopNotification(
             item.occurrence.event.summary,
             `${leadText}${loc}`,
             item.id,
@@ -487,15 +493,23 @@ export default function App() {
           );
         }
       }
+    };
 
-      if (notificationSettings.soundEnabled) {
-        void playNotificationSound();
+    const handleVisibilityOrFocus = () => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        checkDue();
       }
     };
 
     checkDue();
     const intervalId = window.setInterval(checkDue, 5000);
-    return () => window.clearInterval(intervalId);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
   }, [calendars, events, notificationSettings, pushToast]);
 
   const dismissAllOverlays = useCallback(() => {

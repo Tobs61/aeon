@@ -8,7 +8,7 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isDirectoryPickerSupported } from '../lib/fsAccess.ts';
 import {
   type DefaultReminderMinutes,
@@ -47,7 +47,7 @@ const DEFAULT_REMINDER_OPTIONS: Array<{
   label: string;
   value: DefaultReminderMinutes;
 }> = [
-  { label: 'Off', value: -1 },
+  { label: 'No timer', value: -1 },
   { label: 'At start', value: 0 },
   { label: '5m', value: 5 },
   { label: '10m', value: 10 },
@@ -75,10 +75,19 @@ export function SettingsModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [desktopPerm, setDesktopPerm] = useState<DesktopPermissionState>(() =>
-    getDesktopNotificationPermission()
-  );
+  const [desktopPerm, setDesktopPerm] =
+    useState<DesktopPermissionState>('default');
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getDesktopNotificationPermission().then((perm) => {
+      if (active) setDesktopPerm(perm);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const canUseDirectDirectoryApi =
     !isTauriRuntime() &&
@@ -303,7 +312,11 @@ export function SettingsModal({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => void onTestNotification()}
+                  onClick={async () => {
+                    await onTestNotification();
+                    const perm = await getDesktopNotificationPermission();
+                    setDesktopPerm(perm);
+                  }}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-xl border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                 >
                   <Bell className="w-3.5 h-3.5" />
@@ -415,12 +428,18 @@ export function SettingsModal({
                         type="button"
                         role="switch"
                         aria-checked={notificationSettings.desktopEnabled}
-                        onClick={() =>
+                        onClick={async () => {
+                          const nextEnabled =
+                            !notificationSettings.desktopEnabled;
                           onUpdateNotificationSettings({
-                            desktopEnabled:
-                              !notificationSettings.desktopEnabled,
-                          })
-                        }
+                            desktopEnabled: nextEnabled,
+                          });
+                          if (nextEnabled && desktopPerm === 'default') {
+                            const next =
+                              await requestDesktopNotificationPermission();
+                            setDesktopPerm(next);
+                          }
+                        }}
                         className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-colors ${
                           notificationSettings.desktopEnabled
                             ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-950'

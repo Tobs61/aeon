@@ -3,7 +3,9 @@ let unlockBound = false;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
-  if (sharedAudioCtx) return sharedAudioCtx;
+  if (sharedAudioCtx && sharedAudioCtx.state !== 'closed') {
+    return sharedAudioCtx;
+  }
 
   const AudioCtx =
     window.AudioContext ||
@@ -19,49 +21,75 @@ function getAudioContext(): AudioContext | null {
   }
 }
 
+function playSilentUnlockBuffer(ctx: AudioContext): void {
+  try {
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  } catch {
+    // ignore unlock buffer errors
+  }
+}
+
 export function bindAudioUnlock(): () => void {
   if (typeof window === 'undefined' || unlockBound) {
     return () => undefined;
   }
   unlockBound = true;
 
-  const unlock = () => {
-    const ctx = getAudioContext();
-    if (ctx && ctx.state === 'suspended') {
-      void ctx.resume().catch(() => undefined);
-    }
+  const cleanup = () => {
     window.removeEventListener('pointerdown', unlock, true);
     window.removeEventListener('keydown', unlock, true);
+    window.removeEventListener('click', unlock, true);
     unlockBound = false;
+  };
+
+  const unlock = () => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    if (ctx.state === 'suspended') {
+      void ctx
+        .resume()
+        .then(() => {
+          playSilentUnlockBuffer(ctx);
+          if (ctx.state === 'running') {
+            cleanup();
+          }
+        })
+        .catch(() => undefined);
+    } else if (ctx.state === 'running') {
+      cleanup();
+    }
   };
 
   window.addEventListener('pointerdown', unlock, true);
   window.addEventListener('keydown', unlock, true);
+  window.addEventListener('click', unlock, true);
 
-  return () => {
-    window.removeEventListener('pointerdown', unlock, true);
-    window.removeEventListener('keydown', unlock, true);
-    unlockBound = false;
-  };
+  return cleanup;
 }
 
 /**
  * Plays a clean, soft two-note chime using Web Audio API.
  * Safe across browsers, WebKitGTK (Linux), WKWebView (macOS), and WebView2 (Windows).
  */
-export async function playNotificationSound(volume = 0.24): Promise<boolean> {
+export async function playNotificationSound(volume = 0.28): Promise<boolean> {
   const ctx = getAudioContext();
   if (!ctx) return false;
 
   try {
     if (ctx.state === 'suspended') {
       await ctx.resume();
+      playSilentUnlockBuffer(ctx);
     }
 
     const now = ctx.currentTime;
     const notes = [
-      { freq: 880, start: 0, duration: 0.24, gainScale: 1.0 },
-      { freq: 1318.51, start: 0.11, duration: 0.36, gainScale: 0.85 },
+      { freq: 880, start: 0, duration: 0.26, gainScale: 1.0 },
+      { freq: 1318.51, start: 0.12, duration: 0.38, gainScale: 0.9 },
     ];
 
     for (const note of notes) {

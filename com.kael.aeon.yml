@@ -17,7 +17,7 @@ modules:
   - name: aeon
     buildsystem: simple
     build-commands:
-      - ar x aeon_0.1.17_amd64.deb || ar x Aeon_0.1.17_amd64.deb
+      - ar x aeon_0.1.18_amd64.deb || ar x Aeon_0.1.18_amd64.deb
       - mkdir -p unpacked /app/bin /app/share/applications /app/share/icons
       - tar -xf data.tar.* -C unpacked
       - install -Dm755 unpacked/usr/bin/aeon /app/bin/aeon
@@ -28,4 +28,4 @@ modules:
       - for f in /app/share/icons/hicolor/*/apps/aeon.* /app/share/icons/hicolor/*/apps/Aeon.*; do if [ -e "$f" ]; then mv "$f" "${f%/*}/com.kael.aeon.${f##*.}"; fi; done
     sources:
       - type: file
-        path: src-tauri/target/release/bundle/deb/aeon_0.1.17_amd64.deb
+        path: src-tauri/target/release/bundle/deb/aeon_0.1.18_amd64.deb

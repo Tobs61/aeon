@@ -24,7 +24,7 @@ bun install
 bun run dev
 ```
 
-`bun run dev` starts the local Express `.ics` API and Vite dev server at `http://localhost:3000`. On first launch without a custom folder selected, Aeon seeds starter `.ics` calendars in `data/calendars/`.
+`bun run dev` starts the local Express `.ics` API and Vite dev server at `http://localhost:3000`. Aeon reads and writes `.ics` files in `data/calendars/` by default or any folder you select in Settings.
 
 Other common commands:
 
