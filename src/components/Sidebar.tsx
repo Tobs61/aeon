@@ -2,7 +2,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Keyboard,
   Palette,
   PanelLeftClose,
   Settings,
@@ -30,7 +29,7 @@ interface SidebarProps {
   onToggleCalendar: (calendarId: string) => void;
   onChangeCalendarColor: (calendarId: string, color: FolderColorKey) => void;
   onOpenSettings: () => void;
-  onOpenShortcuts: () => void;
+  onCalendarContextMenu?: (e: React.MouseEvent, calendar: IcsCalendar) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   mobileOpen: boolean;
@@ -45,7 +44,7 @@ export function Sidebar({
   onToggleCalendar,
   onChangeCalendarColor,
   onOpenSettings,
-  onOpenShortcuts,
+  onCalendarContextMenu,
   collapsed,
   onToggleCollapse,
   mobileOpen,
@@ -233,6 +232,7 @@ export function Sidebar({
             return (
               <div key={cal.id} className="space-y-1">
                 <div
+                  onContextMenu={(e) => onCalendarContextMenu?.(e, cal)}
                   className={`group flex w-full items-center justify-between rounded-xl px-2 py-1.5 transition-colors ${
                     pickerOpen
                       ? 'bg-neutral-200/70 dark:bg-neutral-800/75'
@@ -344,17 +344,6 @@ export function Sidebar({
         >
           <Settings className="w-3.5 h-3.5" />
           <span>Settings</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenShortcuts}
-          title="Keyboard shortcuts (?)"
-          aria-label="Keyboard shortcuts"
-          className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800 transition-colors whitespace-nowrap shrink-0"
-        >
-          <Keyboard className="w-3.5 h-3.5" />
-          <span>Shortcuts</span>
         </button>
       </div>
     </div>

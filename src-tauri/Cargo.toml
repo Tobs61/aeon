@@ -1,6 +1,6 @@
 [package]
 name = "aeon"
-version = "0.10.3"
+version = "0.1.11"
 description = "Calendar done right."
 authors = ["kael"]
 edition = "2021"

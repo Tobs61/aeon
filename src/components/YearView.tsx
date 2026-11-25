@@ -29,6 +29,13 @@ interface YearViewProps {
   onSelectDay: (dayDate: Date) => void;
   onSelectOccurrence: (occ: IcsOccurrence) => void;
   onCreateAt: (date: Date, hour: number, allDay?: boolean) => void;
+  onEventContextMenu?: (e: React.MouseEvent, occ: IcsOccurrence) => void;
+  onSlotContextMenu?: (
+    e: React.MouseEvent,
+    date: Date,
+    hour: number,
+    allDay?: boolean
+  ) => void;
   onPrevPeriod: () => void;
   onNextPeriod: () => void;
 }
@@ -44,6 +51,8 @@ export function YearView({
   onSelectDay,
   onSelectOccurrence,
   onCreateAt,
+  onEventContextMenu,
+  onSlotContextMenu,
   onPrevPeriod,
   onNextPeriod,
 }: YearViewProps) {
@@ -128,7 +137,7 @@ export function YearView({
       onWheel={handleWheel}
       className="flex-1 overflow-y-auto bg-white dark:bg-[#0a0a0a] p-4 sm:p-6 relative"
     >
-      <div className="mx-auto max-w-6xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+      <div className="mx-auto max-w-6xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-7 sm:gap-x-8 sm:gap-y-8">
         {MONTHS.map((monthIdx) => {
           const monthDate = new Date(year, monthIdx, 1);
           const monthLabel = monthDate.toLocaleDateString('en-US', {
@@ -139,10 +148,7 @@ export function YearView({
             today.getFullYear() === year && today.getMonth() === monthIdx;
 
           return (
-            <section
-              key={monthIdx}
-              className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/55 dark:bg-[#111111] p-3.5 transition-colors"
-            >
+            <section key={monthIdx} className="p-1.5 transition-colors">
               <div className="flex items-center justify-between mb-2.5 px-1">
                 <button
                   type="button"
@@ -188,6 +194,9 @@ export function YearView({
                         } else {
                           onSelectDay(day);
                         }
+                      }}
+                      onContextMenu={(e) => {
+                        onSlotContextMenu?.(e, day, 9, false);
                       }}
                       className={`relative mx-auto flex h-7 w-7 flex-col items-center justify-center rounded-lg text-[11px] tabular-nums transition-colors ${
                         !inMonth
@@ -264,6 +273,9 @@ export function YearView({
                     onClick={() => {
                       setSelectedDay(null);
                       onSelectOccurrence(occ);
+                    }}
+                    onContextMenu={(e) => {
+                      onEventContextMenu?.(e, occ);
                     }}
                     className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors ${style.monthChip}`}
                   >

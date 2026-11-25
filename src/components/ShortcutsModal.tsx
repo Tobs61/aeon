@@ -14,7 +14,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: 'Navigation',
     items: [
       { keys: ['T'], label: 'Jump to Today' },
-      { keys: ['1'], label: 'Switch to Day view' },
+      { keys: ['1', 'D'], label: 'Switch to Day view' },
       { keys: ['2', 'W'], label: 'Switch to Week view' },
       { keys: ['3', 'M'], label: 'Switch to Month view' },
       { keys: ['4', 'Y'], label: 'Switch to Year view' },
@@ -38,7 +38,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ['B', '['], label: 'Collapse or expand sidebar' },
       { keys: ['R'], label: 'Rescan folder for .ics files' },
       { keys: [','], label: 'Open Settings' },
-      { keys: ['D'], label: 'Toggle Light / Dark theme' },
+      { keys: ['\\'], label: 'Toggle Light / Dark theme' },
       { keys: ['?'], label: 'Show keyboard shortcuts' },
     ],
   },

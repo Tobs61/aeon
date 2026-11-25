@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ContextMenu, type ContextMenuState } from './components/ContextMenu.tsx';
 import { DayView } from './components/DayView.tsx';
 import { EventInspectorDrawer } from './components/EventInspectorDrawer.tsx';
 import { EventModal } from './components/EventModal.tsx';
@@ -6,6 +7,7 @@ import { MonthView } from './components/MonthView.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { ShortcutsModal } from './components/ShortcutsModal.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
+import { TitleBar } from './components/TitleBar.tsx';
 import { TopBar } from './components/TopBar.tsx';
 import { WeekView } from './components/WeekView.tsx';
 import { YearView } from './components/YearView.tsx';
@@ -162,6 +164,7 @@ export default function App() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof document === 'undefined') return false;
@@ -372,6 +375,7 @@ export default function App() {
           searchInputRef.current?.blur();
           return;
         }
+        setContextMenu(null);
         setEventModalState(null);
         setSelectedOccurrence(null);
         setSettingsModalOpen(false);
@@ -409,7 +413,7 @@ export default function App() {
       } else if (key === 'n' || key === 'c') {
         e.preventDefault();
         openCreateModal(activeDate, 9, false);
-      } else if (key === '1') {
+      } else if (key === '1' || key === 'd') {
         setViewMode('day');
       } else if (key === '2' || key === 'w') {
         setViewMode('week');
@@ -424,7 +428,7 @@ export default function App() {
       } else if (key === 'b' || e.key === '[') {
         e.preventDefault();
         handleToggleSidebarCollapsed();
-      } else if (key === 'd') {
+      } else if (e.key === '\\') {
         handleSetTheme(!isDark);
       } else if (e.key === 'ArrowLeft' || key === 'h') {
         handlePrev();
@@ -1020,121 +1024,331 @@ export default function App() {
     return formatMonthTitle(activeDate);
   }, [activeDate, firstDayOfWeek, viewMode]);
 
+  const handleFocusCalendar = useCallback(
+    async (calendarId: string) => {
+      const updatedList = calendars.map((c) => ({
+        ...c,
+        visible: c.id === calendarId,
+      }));
+      setCalendars(updatedList);
+
+      let latestPrefs = localPrefs;
+      for (const c of updatedList) {
+        latestPrefs = writeSavedCalendarPrefByName(c.fileName, {
+          visible: c.visible,
+        });
+      }
+      setLocalPrefs(latestPrefs);
+
+      for (const c of updatedList) {
+        if (isTauriRuntime()) {
+          await tauriUpdateCalendarPrefs(c.relativePath, {
+            visible: c.visible,
+          }).catch(() => undefined);
+        } else if (c.source !== 'local-pc') {
+          await fetch('/api/calendars', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              calendarName: c.fileName,
+              relativePath: c.relativePath,
+              visible: c.visible,
+            }),
+          }).catch(() => undefined);
+        }
+      }
+    },
+    [calendars, localPrefs]
+  );
+
+  const handleCreateInCalendar = useCallback(
+    (calendarId: string) => {
+      const start = new Date(activeDate);
+      start.setHours(9, 0, 0, 0);
+      const end = new Date(start.getTime() + 60 * 60 * 1000);
+      setEventModalState({
+        open: true,
+        editingEvent: null,
+        draft: {
+          summary: '',
+          description: '',
+          location: '',
+          startDate: toDateInputString(start),
+          startTime: toTimeInputString(start),
+          endDate: toDateInputString(end),
+          endTime: toTimeInputString(end),
+          allDay: false,
+          rrule: '',
+          calendarId,
+          newFileName: '',
+          status: 'CONFIRMED',
+        },
+      });
+    },
+    [activeDate]
+  );
+
+  const handleDuplicateEvent = useCallback((occ: IcsOccurrence) => {
+    const evt = occ.event;
+    const displayEnd = evt.allDay ? addDays(occ.endDate, -1) : occ.endDate;
+    const safeDisplayEnd =
+      displayEnd < occ.startDate ? occ.startDate : displayEnd;
+
+    setSelectedOccurrence(null);
+    setEventModalState({
+      open: true,
+      editingEvent: null,
+      draft: {
+        summary: `${evt.summary} (Copy)`,
+        description: evt.description ?? '',
+        location: evt.location ?? '',
+        startDate: toDateInputString(occ.startDate),
+        startTime: toTimeInputString(occ.startDate),
+        endDate: toDateInputString(safeDisplayEnd),
+        endTime: toTimeInputString(occ.endDate),
+        allDay: evt.allDay,
+        rrule: evt.rrule ?? '',
+        calendarId: evt.calendarId,
+        newFileName: '',
+        status: evt.status ?? 'CONFIRMED',
+      },
+    });
+  }, []);
+
+  const handleEventContextMenu = useCallback(
+    (e: React.MouseEvent, occ: IcsOccurrence) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        target: { kind: 'event', occurrence: occ },
+      });
+    },
+    []
+  );
+
+  const handleSlotContextMenu = useCallback(
+    (e: React.MouseEvent, date: Date, hour: number, allDay = false) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        target: { kind: 'slot', date, hour, allDay },
+      });
+    },
+    []
+  );
+
+  const handleCalendarContextMenu = useCallback(
+    (e: React.MouseEvent, calendar: IcsCalendar) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        target: { kind: 'calendar', calendar },
+      });
+    },
+    []
+  );
+
+  const handleRootContextMenu = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.tagName === 'PRE' ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      target: { kind: 'general' },
+    });
+  }, []);
+
   const selectedCalendar = selectedOccurrence
     ? calendars.find((c) => c.id === selectedOccurrence.event.calendarId)
     : undefined;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-[#0a0a0a] text-neutral-900 dark:text-neutral-100">
-      <Sidebar
-        calendars={calendars}
-        activeDate={activeDate}
-        firstDayOfWeek={firstDayOfWeek}
-        onSelectDate={(d) => setActiveDate(d)}
-        onToggleCalendar={handleToggleCalendar}
-        onChangeCalendarColor={handleChangeCalendarColor}
-        onOpenSettings={() => setSettingsModalOpen(true)}
-        onOpenShortcuts={() => setShortcutsModalOpen(true)}
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={handleToggleSidebarCollapsed}
-        mobileOpen={mobileSidebarOpen}
-        onCloseMobile={() => setMobileSidebarOpen(false)}
+    <div
+      onContextMenu={handleRootContextMenu}
+      className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-[#0a0a0a] text-neutral-900 dark:text-neutral-100"
+    >
+      <TitleBar
+        rootFolderLabel={rootFolderLabel}
+        periodTitle={headerTitle}
+        isDark={isDark}
+        onToggleTheme={handleSetTheme}
+        onMinimizeFallback={handleToggleSidebarCollapsed}
+        onCloseFallback={() => {
+          setContextMenu(null);
+          setEventModalState(null);
+          setSelectedOccurrence(null);
+          setSettingsModalOpen(false);
+          setShortcutsModalOpen(false);
+          setMobileSidebarOpen(false);
+        }}
       />
 
-      <main className="flex flex-1 flex-col min-w-0 min-h-0">
-        <TopBar
-          title={headerTitle}
-          viewMode={viewMode}
-          onChangeView={setViewMode}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          onToday={() => setActiveDate(new Date())}
-          onNewEvent={() => openCreateModal(activeDate, 9, false)}
-          onRescan={() => void scanActiveFolder()}
-          isScanning={isScanning}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          searchInputRef={searchInputRef}
-          sidebarCollapsed={sidebarCollapsed}
-          onExpandSidebar={handleToggleSidebarCollapsed}
-          onOpenShortcuts={() => setShortcutsModalOpen(true)}
-          onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+      <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
+        <Sidebar
+          calendars={calendars}
+          activeDate={activeDate}
+          firstDayOfWeek={firstDayOfWeek}
+          onSelectDate={(d) => setActiveDate(d)}
+          onToggleCalendar={handleToggleCalendar}
+          onChangeCalendarColor={handleChangeCalendarColor}
+          onOpenSettings={() => setSettingsModalOpen(true)}
+          onCalendarContextMenu={handleCalendarContextMenu}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={handleToggleSidebarCollapsed}
+          mobileOpen={mobileSidebarOpen}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
         />
 
-        {loadError && (
-          <div className="px-6 py-2.5 bg-neutral-100 dark:bg-[#141414] border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between text-xs text-neutral-800 dark:text-neutral-200 shrink-0">
-            <span>{loadError}</span>
-            <button
-              type="button"
-              onClick={() => void scanActiveFolder()}
-              className="font-medium underline"
-            >
-              Retry scan
-            </button>
-          </div>
-        )}
+        <main className="flex flex-1 flex-col min-w-0 min-h-0">
+          <TopBar
+            title={headerTitle}
+            viewMode={viewMode}
+            onChangeView={setViewMode}
+            onPrev={handlePrev}
+            onNext={handleNext}
+            onToday={() => setActiveDate(new Date())}
+            onNewEvent={() => openCreateModal(activeDate, 9, false)}
+            onRescan={() => void scanActiveFolder()}
+            isScanning={isScanning}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchInputRef={searchInputRef}
+            sidebarCollapsed={sidebarCollapsed}
+            onExpandSidebar={handleToggleSidebarCollapsed}
+            onOpenShortcuts={() => setShortcutsModalOpen(true)}
+            onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          />
 
-        {isScanning && calendars.length === 0 ? (
-          <div className="flex-1 p-6 grid grid-cols-7 gap-3">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100/70 dark:bg-neutral-900/60 animate-pulse"
-              />
-            ))}
-          </div>
-        ) : viewMode === 'day' ? (
-          <DayView
-            activeDate={activeDate}
-            events={visibleEvents}
-            calendars={calendars}
-            onSelectOccurrence={setSelectedOccurrence}
-            onCreateAt={openCreateModal}
-            onUpdateEventTiming={handleUpdateEventTiming}
-          />
-        ) : viewMode === 'week' ? (
-          <WeekView
-            activeDate={activeDate}
-            firstDayOfWeek={firstDayOfWeek}
-            events={visibleEvents}
-            calendars={calendars}
-            onSelectOccurrence={setSelectedOccurrence}
-            onCreateAt={openCreateModal}
-            onUpdateEventTiming={handleUpdateEventTiming}
-          />
-        ) : viewMode === 'year' ? (
-          <YearView
-            activeDate={activeDate}
-            firstDayOfWeek={firstDayOfWeek}
-            events={visibleEvents}
-            calendars={calendars}
-            onSelectMonth={(monthDate) => {
-              setActiveDate(monthDate);
-              setViewMode('month');
-            }}
-            onSelectDay={(dayDate) => {
-              setActiveDate(dayDate);
-              setViewMode('day');
-            }}
-            onSelectOccurrence={setSelectedOccurrence}
-            onCreateAt={openCreateModal}
-            onPrevPeriod={handlePrev}
-            onNextPeriod={handleNext}
-          />
-        ) : (
-          <MonthView
-            activeDate={activeDate}
-            firstDayOfWeek={firstDayOfWeek}
-            events={visibleEvents}
-            calendars={calendars}
-            onSelectOccurrence={setSelectedOccurrence}
-            onCreateAt={openCreateModal}
-            onUpdateEventTiming={handleUpdateEventTiming}
-            onPrevPeriod={handlePrev}
-            onNextPeriod={handleNext}
-          />
-        )}
-      </main>
+          {loadError && (
+            <div className="px-6 py-2.5 bg-neutral-100 dark:bg-[#141414] border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between text-xs text-neutral-800 dark:text-neutral-200 shrink-0">
+              <span>{loadError}</span>
+              <button
+                type="button"
+                onClick={() => void scanActiveFolder()}
+                className="font-medium underline"
+              >
+                Retry scan
+              </button>
+            </div>
+          )}
+
+          {isScanning && calendars.length === 0 ? (
+            <div className="flex-1 p-6 grid grid-cols-7 gap-3">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100/70 dark:bg-neutral-900/60 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : viewMode === 'day' ? (
+            <DayView
+              activeDate={activeDate}
+              events={visibleEvents}
+              calendars={calendars}
+              onSelectOccurrence={setSelectedOccurrence}
+              onCreateAt={openCreateModal}
+              onUpdateEventTiming={handleUpdateEventTiming}
+              onEventContextMenu={handleEventContextMenu}
+              onSlotContextMenu={handleSlotContextMenu}
+            />
+          ) : viewMode === 'week' ? (
+            <WeekView
+              activeDate={activeDate}
+              firstDayOfWeek={firstDayOfWeek}
+              events={visibleEvents}
+              calendars={calendars}
+              onSelectOccurrence={setSelectedOccurrence}
+              onCreateAt={openCreateModal}
+              onUpdateEventTiming={handleUpdateEventTiming}
+              onEventContextMenu={handleEventContextMenu}
+              onSlotContextMenu={handleSlotContextMenu}
+            />
+          ) : viewMode === 'year' ? (
+            <YearView
+              activeDate={activeDate}
+              firstDayOfWeek={firstDayOfWeek}
+              events={visibleEvents}
+              calendars={calendars}
+              onSelectMonth={(monthDate) => {
+                setActiveDate(monthDate);
+                setViewMode('month');
+              }}
+              onSelectDay={(dayDate) => {
+                setActiveDate(dayDate);
+                setViewMode('day');
+              }}
+              onSelectOccurrence={setSelectedOccurrence}
+              onCreateAt={openCreateModal}
+              onEventContextMenu={handleEventContextMenu}
+              onSlotContextMenu={handleSlotContextMenu}
+              onPrevPeriod={handlePrev}
+              onNextPeriod={handleNext}
+            />
+          ) : (
+            <MonthView
+              activeDate={activeDate}
+              firstDayOfWeek={firstDayOfWeek}
+              events={visibleEvents}
+              calendars={calendars}
+              onSelectOccurrence={setSelectedOccurrence}
+              onCreateAt={openCreateModal}
+              onUpdateEventTiming={handleUpdateEventTiming}
+              onEventContextMenu={handleEventContextMenu}
+              onSlotContextMenu={handleSlotContextMenu}
+              onPrevPeriod={handlePrev}
+              onNextPeriod={handleNext}
+            />
+          )}
+        </main>
+      </div>
+
+      {contextMenu && (
+        <ContextMenu
+          state={contextMenu}
+          calendars={calendars}
+          viewMode={viewMode}
+          sidebarCollapsed={sidebarCollapsed}
+          isDark={isDark}
+          onClose={() => setContextMenu(null)}
+          onInspectEvent={(occ) => setSelectedOccurrence(occ)}
+          onEditEvent={openEditModal}
+          onDuplicateEvent={handleDuplicateEvent}
+          onDeleteEvent={handleDeleteEvent}
+          onCreateAt={openCreateModal}
+          onCreateInCalendar={handleCreateInCalendar}
+          onToggleCalendar={handleToggleCalendar}
+          onFocusCalendar={handleFocusCalendar}
+          onChangeCalendarColor={handleChangeCalendarColor}
+          onChangeView={setViewMode}
+          onJumpToDay={(d) => {
+            setActiveDate(d);
+            setViewMode('day');
+          }}
+          onToday={() => setActiveDate(new Date())}
+          onRescan={() => void scanActiveFolder()}
+          onToggleSidebar={handleToggleSidebarCollapsed}
+          onToggleTheme={handleSetTheme}
+          onOpenShortcuts={() => setShortcutsModalOpen(true)}
+          onOpenSettings={() => setSettingsModalOpen(true)}
+        />
+      )}
 
       {selectedOccurrence && (
         <EventInspectorDrawer

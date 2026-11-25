@@ -1,3 +1,4 @@
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
   FolderColorKey,
   IcsCalendar,
@@ -212,4 +213,44 @@ export async function tauriImportIcsFiles(
     count++;
   }
   return count;
+}
+
+export async function tauriMinimizeWindow(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await getCurrentWindow().minimize();
+}
+
+export async function tauriToggleMaximizeWindow(): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  const win = getCurrentWindow();
+  await win.toggleMaximize();
+  return win.isMaximized();
+}
+
+export async function tauriIsWindowMaximized(): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  return getCurrentWindow().isMaximized();
+}
+
+export async function tauriCloseWindow(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await getCurrentWindow().close();
+}
+
+export async function tauriStartDragging(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await getCurrentWindow().startDragging();
+}
+
+export async function tauriSubscribeWindowMaximized(
+  onChange: (maximized: boolean) => void
+): Promise<() => void> {
+  if (!isTauriRuntime()) return () => undefined;
+  const win = getCurrentWindow();
+  onChange(await win.isMaximized().catch(() => false));
+  const unlisten = await win.onResized(async () => {
+    const maximized = await win.isMaximized().catch(() => false);
+    onChange(maximized);
+  });
+  return unlisten;
 }

@@ -32,7 +32,7 @@ interface TopBarProps {
 }
 
 const VIEW_TABS: Array<{ mode: CalendarViewMode; label: string; title: string }> = [
-  { mode: 'day', label: 'Day', title: 'Day view (1)' },
+  { mode: 'day', label: 'Day', title: 'Day view (1 / D)' },
   { mode: 'week', label: 'Week', title: 'Week view (2 / W)' },
   { mode: 'month', label: 'Month', title: 'Month view (3 / M)' },
   { mode: 'year', label: 'Year', title: 'Year view (4 / Y)' },
@@ -184,17 +184,15 @@ export function TopBar({
           })}
         </div>
 
-        {sidebarCollapsed && (
-          <button
-            type="button"
-            onClick={onOpenShortcuts}
-            aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts (?)"
-            className="hidden lg:inline-flex h-8 w-8 items-center justify-center rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#141414] text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
-          >
-            <Keyboard className="w-3.5 h-3.5" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onOpenShortcuts}
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (?)"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#141414] text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors shrink-0"
+        >
+          <Keyboard className="w-3.5 h-3.5" />
+        </button>
 
         <button
           type="button"

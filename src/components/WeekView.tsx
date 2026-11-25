@@ -30,6 +30,13 @@ interface WeekViewProps {
     newStart: Date,
     newEnd: Date
   ) => Promise<void>;
+  onEventContextMenu?: (e: React.MouseEvent, occ: IcsOccurrence) => void;
+  onSlotContextMenu?: (
+    e: React.MouseEvent,
+    date: Date,
+    hour: number,
+    allDay?: boolean
+  ) => void;
 }
 
 const HOUR_HEIGHT = 56;
@@ -193,6 +200,8 @@ export function WeekView({
   onSelectOccurrence,
   onCreateAt,
   onUpdateEventTiming,
+  onEventContextMenu,
+  onSlotContextMenu,
 }: WeekViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridColumnsRef = useRef<HTMLDivElement>(null);
@@ -546,6 +555,7 @@ export function WeekView({
                     if (Date.now() < suppressSlotClickUntilRef.current) return;
                     onCreateAt(day, 9, true);
                   }}
+                  onContextMenu={(e) => onSlotContextMenu?.(e, day, 9, true)}
                   className={`min-h-[30px] p-1 border-r last:border-r-0 border-neutral-200 dark:border-neutral-800 space-y-1 cursor-pointer transition-colors ${
                     isDropTarget
                       ? 'bg-neutral-200/70 dark:bg-neutral-800/60 ring-1 ring-inset ring-neutral-500/50'
@@ -580,6 +590,7 @@ export function WeekView({
                           });
                         }}
                         onClick={(e) => e.stopPropagation()}
+                        onContextMenu={(e) => onEventContextMenu?.(e, occ)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
@@ -672,6 +683,9 @@ export function WeekView({
                         }
                         onCreateAt(day, hour, false);
                       }}
+                      onContextMenu={(e) =>
+                        onSlotContextMenu?.(e, day, hour, false)
+                      }
                       className="hover:bg-neutral-100/70 dark:hover:bg-neutral-900/60 transition-colors cursor-pointer"
                     />
                   ))}
@@ -711,6 +725,7 @@ export function WeekView({
                           startDragInteraction(e, 'move', item)
                         }
                         onClick={(e) => e.stopPropagation()}
+                        onContextMenu={(e) => onEventContextMenu?.(e, occ)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();

@@ -25,6 +25,13 @@ interface DayViewProps {
     newStart: Date,
     newEnd: Date
   ) => Promise<void>;
+  onEventContextMenu?: (e: React.MouseEvent, occ: IcsOccurrence) => void;
+  onSlotContextMenu?: (
+    e: React.MouseEvent,
+    date: Date,
+    hour: number,
+    allDay?: boolean
+  ) => void;
 }
 
 const HOUR_HEIGHT = 60;
@@ -160,6 +167,8 @@ export function DayView({
   onSelectOccurrence,
   onCreateAt,
   onUpdateEventTiming,
+  onEventContextMenu,
+  onSlotContextMenu,
 }: DayViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridColumnRef = useRef<HTMLDivElement>(null);
@@ -402,6 +411,7 @@ export function DayView({
           </div>
           <div
             onClick={() => onCreateAt(activeDate, 9, true)}
+            onContextMenu={(e) => onSlotContextMenu?.(e, activeDate, 9, true)}
             className="min-h-[36px] px-4 py-1.5 flex flex-wrap gap-1.5 cursor-pointer hover:bg-neutral-100/70 dark:hover:bg-neutral-900/60 transition-colors"
           >
             {allDayOccs.length === 0 ? (
@@ -420,6 +430,7 @@ export function DayView({
                       e.stopPropagation();
                       onSelectOccurrence(occ);
                     }}
+                    onContextMenu={(e) => onEventContextMenu?.(e, occ)}
                     className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${style.monthChip}`}
                   >
                     {occ.event.summary}
@@ -477,6 +488,9 @@ export function DayView({
                   if (Date.now() < suppressSlotClickUntilRef.current) return;
                   onCreateAt(activeDate, hour, false);
                 }}
+                onContextMenu={(e) =>
+                  onSlotContextMenu?.(e, activeDate, hour, false)
+                }
                 className="hover:bg-neutral-100/70 dark:hover:bg-neutral-900/60 transition-colors cursor-pointer"
               />
             ))}
@@ -514,6 +528,7 @@ export function DayView({
                   tabIndex={0}
                   onPointerDown={(e) => startDragInteraction(e, 'move', item)}
                   onClick={(e) => e.stopPropagation()}
+                  onContextMenu={(e) => onEventContextMenu?.(e, occ)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();

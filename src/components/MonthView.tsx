@@ -32,6 +32,13 @@ interface MonthViewProps {
     newStart: Date,
     newEnd: Date
   ) => Promise<void>;
+  onEventContextMenu?: (e: React.MouseEvent, occ: IcsOccurrence) => void;
+  onSlotContextMenu?: (
+    e: React.MouseEvent,
+    date: Date,
+    hour: number,
+    allDay?: boolean
+  ) => void;
   onPrevPeriod: () => void;
   onNextPeriod: () => void;
 }
@@ -64,6 +71,8 @@ export function MonthView({
   onSelectOccurrence,
   onCreateAt,
   onUpdateEventTiming,
+  onEventContextMenu,
+  onSlotContextMenu,
   onPrevPeriod,
   onNextPeriod,
 }: MonthViewProps) {
@@ -224,6 +233,7 @@ export function MonthView({
                 if (Date.now() < suppressDayClickUntilRef.current) return;
                 onCreateAt(day, 9, false);
               }}
+              onContextMenu={(e) => onSlotContextMenu?.(e, day, 9, false)}
               className={`group flex flex-col p-1.5 min-h-0 overflow-hidden cursor-pointer transition-colors ${
                 !isLastCol
                   ? 'border-r border-neutral-200 dark:border-neutral-800'
@@ -283,6 +293,7 @@ export function MonthView({
                         });
                       }}
                       onClick={(e) => e.stopPropagation()}
+                      onContextMenu={(e) => onEventContextMenu?.(e, occ)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
@@ -391,6 +402,7 @@ export function MonthView({
                       setExpandedDay(null);
                       onSelectOccurrence(occ);
                     }}
+                    onContextMenu={(e) => onEventContextMenu?.(e, occ)}
                     className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors ${style.monthChip}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
