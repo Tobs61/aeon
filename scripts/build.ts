@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 type BundleTarget =
+  | 'web'
   | 'flatpak'
   | 'exe'
   | 'dmg'
@@ -13,6 +14,7 @@ type BundleTarget =
   | 'deb';
 
 const SUPPORTED_TARGETS: BundleTarget[] = [
+  'web',
   'flatpak',
   'exe',
   'dmg',
@@ -22,7 +24,7 @@ const SUPPORTED_TARGETS: BundleTarget[] = [
   'deb',
 ];
 
-const TAURI_BUNDLE_MAP: Record<Exclude<BundleTarget, 'flatpak'>, string> = {
+const TAURI_BUNDLE_MAP: Record<Exclude<BundleTarget, 'flatpak' | 'web'>, string> = {
   exe: 'nsis',
   dmg: 'dmg',
   msi: 'msi',
@@ -37,9 +39,9 @@ function readAppVersion(): string {
   try {
     const pkgRaw = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8');
     const pkg = JSON.parse(pkgRaw) as { version?: string };
-    return pkg.version || '0.1.12';
+    return pkg.version || '0.1.13';
   } catch {
-    return '0.1.12';
+    return '0.1.13';
   }
 }
 
@@ -193,8 +195,11 @@ function main(): void {
 
   const chosenTargets = all ? [...SUPPORTED_TARGETS] : targets;
 
-  // Default behavior when called with no targets (e.g., `npm run build` / `bun run build`)
-  if (chosenTargets.length === 0) {
+  // Default behavior when called with no targets or only "web"
+  if (
+    chosenTargets.length === 0 ||
+    (chosenTargets.length === 1 && chosenTargets[0] === 'web')
+  ) {
     const viteBin = path.join(ROOT, 'node_modules', '.bin', 'vite');
     if (fs.existsSync(viteBin)) {
       runStep(viteBin, ['build'], dryRun);
@@ -205,11 +210,12 @@ function main(): void {
   }
 
   const version = readAppVersion();
-  const tauriBundles = chosenTargets
-    .filter((t): t is Exclude<BundleTarget, 'flatpak'> => t !== 'flatpak')
+  const desktopTargets = chosenTargets.filter((t) => t !== 'web');
+  const tauriBundles = desktopTargets
+    .filter((t): t is Exclude<BundleTarget, 'flatpak' | 'web'> => t !== 'flatpak')
     .map((t) => TAURI_BUNDLE_MAP[t]);
 
-  const wantsFlatpak = chosenTargets.includes('flatpak');
+  const wantsFlatpak = desktopTargets.includes('flatpak');
 
   if (tauriBundles.length > 0) {
     runStep('bunx', ['tauri', 'build', '--bundles', tauriBundles.join(',')], dryRun);
@@ -221,8 +227,8 @@ function main(): void {
 
   console.log(
     dryRun
-      ? `Dry run complete for target(s): ${chosenTargets.map((t) => `.${t}`).join(', ')}`
-      : `Build complete for target(s): ${chosenTargets.map((t) => `.${t}`).join(', ')}`
+      ? `Dry run complete for target(s): ${desktopTargets.map((t) => `.${t}`).join(', ')}`
+      : `Build complete for target(s): ${desktopTargets.map((t) => `.${t}`).join(', ')}`
   );
 }
 

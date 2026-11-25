@@ -96,26 +96,9 @@ export function TitleBar({
       data-tauri-drag-region
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
-      className="relative flex h-8 items-stretch justify-between pl-3 pr-0 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#0f0f0f] select-none shrink-0 z-30"
+      className="relative flex h-8 items-stretch justify-between pl-0 pr-0 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#0f0f0f] select-none shrink-0 z-30"
     >
-      {/* Minimal Left Drag Handle + Wordmark */}
-      <div
-        data-tauri-drag-region
-        className="flex items-center gap-2 min-w-0 pointer-events-none"
-      >
-        <div className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-black border border-neutral-800/80 p-0.5 shrink-0">
-          <img
-            src="/assets/aeon-logo.svg"
-            alt="Aeon"
-            className="h-full w-full object-contain"
-          />
-        </div>
-        <span className="font-display text-xs font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 whitespace-nowrap">
-          Aeon
-        </span>
-      </div>
-
-      {/* Center Drag Region */}
+      {/* Window Drag Region */}
       <div data-tauri-drag-region className="flex-1" />
 
       {/* Flush Top-Right Window Controls */}
