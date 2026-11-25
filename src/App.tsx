@@ -375,7 +375,10 @@ export default function App() {
           searchInputRef.current?.blur();
           return;
         }
-        setContextMenu(null);
+        if (contextMenu) {
+          setContextMenu(null);
+          return;
+        }
         setEventModalState(null);
         setSelectedOccurrence(null);
         setSettingsModalOpen(false);
@@ -441,6 +444,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     activeDate,
+    contextMenu,
     eventModalState,
     handleNext,
     handlePrev,
@@ -1174,6 +1178,22 @@ export default function App() {
     });
   }, []);
 
+  const hasOpenOverlay = Boolean(
+    eventModalState?.open ||
+      settingsModalOpen ||
+      shortcutsModalOpen ||
+      selectedOccurrence ||
+      mobileSidebarOpen
+  );
+
+  const dismissAllOverlays = useCallback(() => {
+    setEventModalState(null);
+    setSelectedOccurrence(null);
+    setSettingsModalOpen(false);
+    setShortcutsModalOpen(false);
+    setMobileSidebarOpen(false);
+  }, []);
+
   const selectedCalendar = selectedOccurrence
     ? calendars.find((c) => c.id === selectedOccurrence.event.calendarId)
     : undefined;
@@ -1184,18 +1204,10 @@ export default function App() {
       className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-[#0a0a0a] text-neutral-900 dark:text-neutral-100"
     >
       <TitleBar
-        rootFolderLabel={rootFolderLabel}
-        periodTitle={headerTitle}
-        isDark={isDark}
-        onToggleTheme={handleSetTheme}
         onMinimizeFallback={handleToggleSidebarCollapsed}
         onCloseFallback={() => {
           setContextMenu(null);
-          setEventModalState(null);
-          setSelectedOccurrence(null);
-          setSettingsModalOpen(false);
-          setShortcutsModalOpen(false);
-          setMobileSidebarOpen(false);
+          dismissAllOverlays();
         }}
       />
 
@@ -1319,37 +1331,6 @@ export default function App() {
         </main>
       </div>
 
-      {contextMenu && (
-        <ContextMenu
-          state={contextMenu}
-          calendars={calendars}
-          viewMode={viewMode}
-          sidebarCollapsed={sidebarCollapsed}
-          isDark={isDark}
-          onClose={() => setContextMenu(null)}
-          onInspectEvent={(occ) => setSelectedOccurrence(occ)}
-          onEditEvent={openEditModal}
-          onDuplicateEvent={handleDuplicateEvent}
-          onDeleteEvent={handleDeleteEvent}
-          onCreateAt={openCreateModal}
-          onCreateInCalendar={handleCreateInCalendar}
-          onToggleCalendar={handleToggleCalendar}
-          onFocusCalendar={handleFocusCalendar}
-          onChangeCalendarColor={handleChangeCalendarColor}
-          onChangeView={setViewMode}
-          onJumpToDay={(d) => {
-            setActiveDate(d);
-            setViewMode('day');
-          }}
-          onToday={() => setActiveDate(new Date())}
-          onRescan={() => void scanActiveFolder()}
-          onToggleSidebar={handleToggleSidebarCollapsed}
-          onToggleTheme={handleSetTheme}
-          onOpenShortcuts={() => setShortcutsModalOpen(true)}
-          onOpenSettings={() => setSettingsModalOpen(true)}
-        />
-      )}
-
       {selectedOccurrence && (
         <EventInspectorDrawer
           occurrence={selectedOccurrence}
@@ -1387,6 +1368,43 @@ export default function App() {
 
       {shortcutsModalOpen && (
         <ShortcutsModal onClose={() => setShortcutsModalOpen(false)} />
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          state={contextMenu}
+          calendars={calendars}
+          viewMode={viewMode}
+          sidebarCollapsed={sidebarCollapsed}
+          isDark={isDark}
+          hasOpenOverlay={hasOpenOverlay}
+          onClose={() => setContextMenu(null)}
+          onDismissOverlay={dismissAllOverlays}
+          onInspectEvent={(occ) => setSelectedOccurrence(occ)}
+          onEditEvent={openEditModal}
+          onDuplicateEvent={handleDuplicateEvent}
+          onDeleteEvent={handleDeleteEvent}
+          onCreateAt={openCreateModal}
+          onCreateInCalendar={handleCreateInCalendar}
+          onToggleCalendar={handleToggleCalendar}
+          onFocusCalendar={handleFocusCalendar}
+          onChangeCalendarColor={handleChangeCalendarColor}
+          onChangeView={(mode) => {
+            dismissAllOverlays();
+            setViewMode(mode);
+          }}
+          onJumpToDay={(d) => {
+            dismissAllOverlays();
+            setActiveDate(d);
+            setViewMode('day');
+          }}
+          onToday={() => setActiveDate(new Date())}
+          onRescan={() => void scanActiveFolder()}
+          onToggleSidebar={handleToggleSidebarCollapsed}
+          onToggleTheme={handleSetTheme}
+          onOpenShortcuts={() => setShortcutsModalOpen(true)}
+          onOpenSettings={() => setSettingsModalOpen(true)}
+        />
       )}
     </div>
   );

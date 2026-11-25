@@ -1,17 +1,25 @@
 {
   "name": "aeon",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build",
+    "build": "bun run scripts/build.ts",
+    "build:web": "vite build",
+    "build:flatpak": "bun run scripts/build.ts --target .flatpak",
+    "build:exe": "bun run scripts/build.ts --target .exe",
+    "build:dmg": "bun run scripts/build.ts --target .dmg",
+    "build:msi": "bun run scripts/build.ts --target .msi",
+    "build:rpm": "bun run scripts/build.ts --target .rpm",
+    "build:appimage": "bun run scripts/build.ts --target .appimage",
+    "build:deb": "bun run scripts/build.ts --target .deb",
     "start": "node server.ts",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "bun run scripts/clean.ts",
     "lint": "tsc --noEmit",
     "tauri:dev": "cargo tauri dev",
-    "tauri:build": "cargo tauri build --bundles deb,appimage"
+    "tauri:build": "bun run scripts/build.ts --target .deb,.appimage"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

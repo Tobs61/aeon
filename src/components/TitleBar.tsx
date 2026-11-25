@@ -1,4 +1,4 @@
-import { Copy, Minus, Moon, Square, Sun, X } from 'lucide-react';
+import { Copy, Minus, Square, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   isTauriRuntime,
@@ -10,19 +10,11 @@ import {
 } from '../lib/tauriRuntime.ts';
 
 interface TitleBarProps {
-  rootFolderLabel: string;
-  periodTitle: string;
-  isDark: boolean;
-  onToggleTheme: (dark: boolean) => void;
   onMinimizeFallback: () => void;
   onCloseFallback: () => void;
 }
 
 export function TitleBar({
-  rootFolderLabel,
-  periodTitle,
-  isDark,
-  onToggleTheme,
   onMinimizeFallback,
   onCloseFallback,
 }: TitleBarProps) {
@@ -104,71 +96,36 @@ export function TitleBar({
       data-tauri-drag-region
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
-      className="relative flex h-9 items-center justify-between gap-3 px-3 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#0f0f0f] select-none shrink-0 z-30"
+      className="relative flex h-8 items-stretch justify-between pl-3 pr-0 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#0f0f0f] select-none shrink-0 z-30"
     >
-      {/* Left: App Icon, Name & Active Calendar Root */}
+      {/* Minimal Left Drag Handle + Wordmark */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 min-w-0 flex-1"
+        className="flex items-center gap-2 min-w-0 pointer-events-none"
       >
-        <div className="flex h-4.5 w-4.5 items-center justify-center rounded-[5px] bg-black border border-neutral-800/80 p-0.5 shrink-0 pointer-events-none">
+        <div className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-black border border-neutral-800/80 p-0.5 shrink-0">
           <img
             src="/assets/aeon-logo.svg"
             alt="Aeon"
             className="h-full w-full object-contain"
           />
         </div>
-        <span className="font-display text-xs font-semibold tracking-tight text-neutral-900 dark:text-white whitespace-nowrap pointer-events-none">
+        <span className="font-display text-xs font-semibold tracking-tight text-neutral-800 dark:text-neutral-200 whitespace-nowrap">
           Aeon
         </span>
-        <span
-          className="text-neutral-300 dark:text-neutral-700 text-xs pointer-events-none hidden sm:inline"
-          aria-hidden="true"
-        >
-          ·
-        </span>
-        <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate pointer-events-none hidden sm:inline">
-          {rootFolderLabel}
-        </span>
       </div>
 
-      {/* Center: Quiet Active Period Title */}
-      <div
-        data-tauri-drag-region
-        className="hidden md:flex items-center justify-center min-w-0 max-w-xs pointer-events-none"
-      >
-        <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400 truncate">
-          {periodTitle}
-        </span>
-      </div>
+      {/* Center Drag Region */}
+      <div data-tauri-drag-region className="flex-1" />
 
-      {/* Right: Theme Switch + Window Controls */}
-      <div className="flex items-center justify-end gap-1 flex-1 shrink-0">
-        <button
-          type="button"
-          onClick={() => onToggleTheme(!isDark)}
-          title={isDark ? 'Switch to Light theme (\\)' : 'Switch to Dark theme (\\)'}
-          aria-label={isDark ? 'Switch to Light theme' : 'Switch to Dark theme'}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800 transition-colors"
-        >
-          {isDark ? (
-            <Sun className="w-3.5 h-3.5" />
-          ) : (
-            <Moon className="w-3.5 h-3.5" />
-          )}
-        </button>
-
-        <div
-          className="h-3.5 w-px bg-neutral-200 dark:bg-neutral-800 mx-1"
-          aria-hidden="true"
-        />
-
+      {/* Flush Top-Right Window Controls */}
+      <div className="flex items-stretch shrink-0">
         <button
           type="button"
           onClick={() => void handleMinimize()}
           title={tauri ? 'Minimize window' : 'Toggle compact workspace'}
           aria-label={tauri ? 'Minimize window' : 'Toggle compact workspace'}
-          className="inline-flex h-6 w-7 items-center justify-center rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800 transition-colors"
+          className="inline-flex h-full w-11 items-center justify-center rounded-none text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/75 dark:hover:bg-neutral-800 transition-colors"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
@@ -186,7 +143,7 @@ export function TitleBar({
                 : 'Enter fullscreen'
           }
           aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
-          className="inline-flex h-6 w-7 items-center justify-center rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800 transition-colors"
+          className="inline-flex h-full w-11 items-center justify-center rounded-none text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/75 dark:hover:bg-neutral-800 transition-colors"
         >
           {isMaximized ? (
             <Copy className="w-3 h-3" />
@@ -200,7 +157,7 @@ export function TitleBar({
           onClick={() => void handleClose()}
           title={tauri ? 'Close window' : 'Dismiss open overlays'}
           aria-label={tauri ? 'Close window' : 'Dismiss open overlays'}
-          className="inline-flex h-6 w-7 items-center justify-center rounded-md text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/80 dark:hover:bg-neutral-800 transition-colors"
+          className="inline-flex h-full w-11 items-center justify-center rounded-none text-neutral-500 dark:text-neutral-400 hover:bg-neutral-900 hover:text-white dark:hover:bg-white dark:hover:text-neutral-950 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>

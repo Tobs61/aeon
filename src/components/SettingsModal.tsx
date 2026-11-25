@@ -298,7 +298,7 @@ export function SettingsModal({
 
         <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-neutral-50 dark:bg-[#161616]">
           <span className="text-xs font-mono tabular-nums text-neutral-400 dark:text-neutral-500">
-            Aeon v0.1.11
+            Aeon v0.1.12
           </span>
           <button
             type="button"
