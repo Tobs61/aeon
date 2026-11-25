@@ -50,6 +50,22 @@ export function toTimeInputString(date: Date): string {
   return `${hh}:${mm}`;
 }
 
+export function parseDateInputString(ymd: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+export function draftEndToIcsEnd(
+  endDate: string,
+  endTime: string,
+  allDay: boolean
+): string {
+  if (!allDay) {
+    return `${endDate}T${endTime}:00`;
+  }
+  return toDateInputString(addDays(parseDateInputString(endDate), 1));
+}
+
 export function formatHourLabel(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`;
 }
@@ -157,12 +173,20 @@ const DAY_CODE_LABELS: Record<string, string> = {
   SU: 'Sun',
 };
 
-export function formatRruleHuman(rrule: string): string {
+export function parseRruleParts(rrule: string): Record<string, string> {
   const parts: Record<string, string> = {};
   for (const seg of rrule.split(';')) {
-    const [k, v] = seg.split('=');
-    if (k && v) parts[k.toUpperCase()] = v.toUpperCase();
+    const eqIdx = seg.indexOf('=');
+    if (eqIdx === -1) continue;
+    const k = seg.slice(0, eqIdx).trim().toUpperCase();
+    const v = seg.slice(eqIdx + 1).trim().toUpperCase();
+    if (k && v) parts[k] = v;
   }
+  return parts;
+}
+
+export function formatRruleHuman(rrule: string): string {
+  const parts = parseRruleParts(rrule);
 
   const freq = parts.FREQ;
   const interval = Math.max(1, Number(parts.INTERVAL || 1));

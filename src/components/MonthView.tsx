@@ -1,8 +1,11 @@
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  findDropDatasetKey,
+  shiftOccurrenceByDayKeys,
+} from '../lib/calendarLayout.ts';
 import { FOLDER_COLOR_STYLES } from '../lib/colors.ts';
 import {
-  addDays,
   endOfDay,
   formatTimeShort,
   getMonthGridDays,
@@ -52,15 +55,6 @@ interface MonthDragState {
   hasMoved: boolean;
   origDayKey: string;
   hoverDayKey: string | null;
-}
-
-function findMonthDropDateKey(x: number, y: number): string | null {
-  const els = document.elementsFromPoint(x, y);
-  for (const el of els) {
-    const key = (el as HTMLElement).dataset?.monthDrop;
-    if (key) return key;
-  }
-  return null;
 }
 
 export function MonthView({
@@ -133,7 +127,7 @@ export function MonthView({
       );
       const hasMoved = curr.hasMoved || dist > 5;
       const hoverDayKey = hasMoved
-        ? findMonthDropDateKey(e.clientX, e.clientY)
+        ? findDropDatasetKey(e.clientX, e.clientY, 'monthDrop')
         : null;
 
       setDragState((prev) =>
@@ -161,19 +155,14 @@ export function MonthView({
         return;
       }
 
-      if (curr.hoverDayKey && curr.hoverDayKey !== curr.origDayKey) {
-        const [ty, tm, td] = curr.hoverDayKey.split('-').map(Number);
-        const [oy, om, od] = curr.origDayKey.split('-').map(Number);
-        const targetDayStart = new Date(ty, (tm || 1) - 1, td || 1);
-        const origCellStart = new Date(oy, (om || 1) - 1, od || 1);
-        const diffDays = Math.round(
-          (targetDayStart.getTime() - origCellStart.getTime()) /
-            (24 * 60 * 60 * 1000)
+      if (curr.hoverDayKey) {
+        const shifted = shiftOccurrenceByDayKeys(
+          curr.occ,
+          curr.origDayKey,
+          curr.hoverDayKey
         );
-        if (diffDays !== 0) {
-          const newStart = addDays(curr.occ.startDate, diffDays);
-          const newEnd = addDays(curr.occ.endDate, diffDays);
-          void onUpdateEventTiming(curr.occ, newStart, newEnd);
+        if (shifted) {
+          void onUpdateEventTiming(curr.occ, shifted.start, shifted.end);
         }
       }
     };

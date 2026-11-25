@@ -4,6 +4,12 @@ import http from 'node:http';
 import path from 'node:path';
 import { createServer as createViteServer } from 'vite';
 import {
+  calendarNameKey,
+  FOLDER_COLOR_KEYS,
+  isFolderColorKey,
+} from './src/lib/colors.ts';
+import {
+  generateEventUid,
   parseIcsContent,
   removeEventFromIcsContent,
   serializeCalendarEventsToIcs,
@@ -66,27 +72,17 @@ function logError(message: string, err?: unknown): void {
   }
 }
 
-const COLOR_CYCLE: FolderColorKey[] = [
-  'blue',
-  'emerald',
-  'teal',
-  'amber',
-  'rose',
-  'indigo',
-  'violet',
-  'slate',
-];
-
-const ALLOWED_COLORS = new Set<FolderColorKey>(COLOR_CYCLE);
-
-function calendarNameKey(fileNameOrPath: string): string {
-  const base = fileNameOrPath.split('/').pop() ?? fileNameOrPath;
-  return base.replace(/\.ics$/i, '').trim().toLowerCase();
-}
-
 interface CalendarPref {
   color?: FolderColorKey;
   visible?: boolean;
+}
+
+function normalizeEventStatus(
+  status: unknown
+): 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED' {
+  return status === 'TENTATIVE' || status === 'CANCELLED'
+    ? status
+    : 'CONFIRMED';
 }
 
 function isValidRelativeIcsPath(rel: string): boolean {
@@ -343,10 +339,9 @@ async function scanWorkspaceCalendars(): Promise<{
 
     const nameKey = calendarNameKey(file.fileName);
     const pref = prefs[nameKey] ?? prefs[file.relativePath] ?? {};
-    const color =
-      pref.color && ALLOWED_COLORS.has(pref.color)
-        ? pref.color
-        : COLOR_CYCLE[idx % COLOR_CYCLE.length];
+    const color = isFolderColorKey(pref.color)
+      ? pref.color
+      : FOLDER_COLOR_KEYS[idx % FOLDER_COLOR_KEYS.length];
     const visible = typeof pref.visible === 'boolean' ? pref.visible : true;
 
     calendars.push({
@@ -438,8 +433,8 @@ async function startServer(): Promise<void> {
 
       const prefs = await readCalendarPrefs();
       const current = prefs[nameKey] ?? (rawRef ? prefs[rawRef] : undefined) ?? {};
-      const nextColor = ALLOWED_COLORS.has(req.body?.color)
-        ? (req.body.color as FolderColorKey)
+      const nextColor = isFolderColorKey(req.body?.color)
+        ? req.body.color
         : current.color;
       const nextVisible =
         typeof req.body?.visible === 'boolean'
@@ -466,8 +461,8 @@ async function startServer(): Promise<void> {
   app.post('/api/calendars', async (req, res) => {
     try {
       const fileName = slugifyIcsFilename(String(req.body?.name || 'calendar'));
-      const color = ALLOWED_COLORS.has(req.body?.color)
-        ? (req.body.color as FolderColorKey)
+      const color: FolderColorKey = isFolderColorKey(req.body?.color)
+        ? req.body.color
         : 'blue';
 
       if (!isValidRelativeIcsPath(fileName)) {
@@ -541,9 +536,7 @@ async function startServer(): Promise<void> {
       await fs.mkdir(path.dirname(destPath), { recursive: true });
 
       const existingRaw = await fs.readFile(destPath, 'utf8').catch(() => null);
-      const uid = `aeon-${Date.now().toString(36)}-${Math.random()
-        .toString(36)
-        .slice(2, 7)}@local`;
+      const uid = generateEventUid();
 
       const updatedRaw = upsertEventInIcsContent(existingRaw, {
         uid,
@@ -554,10 +547,7 @@ async function startServer(): Promise<void> {
         end: String(end),
         allDay: Boolean(allDay),
         rrule: rrule ? String(rrule) : undefined,
-        status:
-          status === 'TENTATIVE' || status === 'CANCELLED'
-            ? status
-            : 'CONFIRMED',
+        status: normalizeEventStatus(status),
       });
 
       await fs.writeFile(destPath, updatedRaw, 'utf8');
@@ -618,10 +608,7 @@ async function startServer(): Promise<void> {
         end: String(end),
         allDay: Boolean(allDay),
         rrule: rrule ? String(rrule) : undefined,
-        status:
-          status === 'TENTATIVE' || status === 'CANCELLED'
-            ? status
-            : 'CONFIRMED',
+        status: normalizeEventStatus(status),
       };
 
       if (oldFullPath !== newFullPath) {

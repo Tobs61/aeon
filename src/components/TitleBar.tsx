@@ -8,6 +8,7 @@ import {
   tauriSubscribeWindowMaximized,
   tauriToggleMaximizeWindow,
 } from '../lib/tauriRuntime.ts';
+import { APP_VERSION } from '../lib/version.ts';
 
 interface TitleBarProps {
   onMinimizeFallback: () => void;
@@ -98,8 +99,15 @@ export function TitleBar({
       onDoubleClick={handleDoubleClick}
       className="relative flex h-8 items-stretch justify-between pl-0 pr-0 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#0f0f0f] select-none shrink-0 z-30"
     >
-      {/* Window Drag Region */}
-      <div data-tauri-drag-region className="flex-1" />
+      {/* Window Drag Region + Always-Visible Version */}
+      <div
+        data-tauri-drag-region
+        className="flex flex-1 items-center pl-3"
+      >
+        <span className="pointer-events-none font-mono text-[11px] tabular-nums text-neutral-400 dark:text-neutral-500">
+          v{APP_VERSION}
+        </span>
+      </div>
 
       {/* Flush Top-Right Window Controls */}
       <div className="flex items-stretch shrink-0">

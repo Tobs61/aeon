@@ -13,8 +13,7 @@ type BundleTarget =
   | 'appimage'
   | 'deb';
 
-const SUPPORTED_TARGETS: BundleTarget[] = [
-  'web',
+const DESKTOP_TARGETS: Array<Exclude<BundleTarget, 'web'>> = [
   'flatpak',
   'exe',
   'dmg',
@@ -23,6 +22,8 @@ const SUPPORTED_TARGETS: BundleTarget[] = [
   'appimage',
   'deb',
 ];
+
+const SUPPORTED_TARGETS: BundleTarget[] = ['web', ...DESKTOP_TARGETS];
 
 const TAURI_BUNDLE_MAP: Record<Exclude<BundleTarget, 'flatpak' | 'web'>, string> = {
   exe: 'nsis',
@@ -39,18 +40,25 @@ function readAppVersion(): string {
   try {
     const pkgRaw = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8');
     const pkg = JSON.parse(pkgRaw) as { version?: string };
-    return pkg.version || '0.1.13';
+    return pkg.version || '0.1.14';
   } catch {
-    return '0.1.13';
+    return '0.1.14';
   }
 }
 
-function normalizeTarget(raw: string): BundleTarget | null {
-  const cleaned = raw.trim().toLowerCase().replace(/^\./, '');
-  if (SUPPORTED_TARGETS.includes(cleaned as BundleTarget)) {
-    return cleaned as BundleTarget;
+function addTargets(rawValue: string, targets: BundleTarget[]): void {
+  for (const part of rawValue.split(',')) {
+    const cleaned = part.trim().toLowerCase().replace(/^\./, '');
+    if (!SUPPORTED_TARGETS.includes(cleaned as BundleTarget)) {
+      throw new Error(
+        `Unsupported target "${part}". Supported: ${DESKTOP_TARGETS.map((t) => `.${t}`).join(', ')}`
+      );
+    }
+    const parsed = cleaned as BundleTarget;
+    if (!targets.includes(parsed)) {
+      targets.push(parsed);
+    }
   }
-  return null;
 }
 
 function printHelp(): void {
@@ -121,36 +129,11 @@ function parseCli(argv: string[]): {
       if (!value) {
         throw new Error(`Missing value after ${arg}`);
       }
-      for (const part of value.split(',')) {
-        const parsed = normalizeTarget(part);
-        if (!parsed) {
-          throw new Error(
-            `Unsupported target "${part}". Supported: ${SUPPORTED_TARGETS.map((t) => `.${t}`).join(', ')}`
-          );
-        }
-        if (!targets.includes(parsed)) targets.push(parsed);
-      }
+      addTargets(value, targets);
     } else if (arg.startsWith('--target=')) {
-      const value = arg.slice('--target='.length);
-      for (const part of value.split(',')) {
-        const parsed = normalizeTarget(part);
-        if (!parsed) {
-          throw new Error(
-            `Unsupported target "${part}". Supported: ${SUPPORTED_TARGETS.map((t) => `.${t}`).join(', ')}`
-          );
-        }
-        if (!targets.includes(parsed)) targets.push(parsed);
-      }
+      addTargets(arg.slice('--target='.length), targets);
     } else if (!arg.startsWith('-')) {
-      for (const part of arg.split(',')) {
-        const parsed = normalizeTarget(part);
-        if (!parsed) {
-          throw new Error(
-            `Unsupported target "${part}". Supported: ${SUPPORTED_TARGETS.map((t) => `.${t}`).join(', ')}`
-          );
-        }
-        if (!targets.includes(parsed)) targets.push(parsed);
-      }
+      addTargets(arg, targets);
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -193,7 +176,7 @@ function main(): void {
     return;
   }
 
-  const chosenTargets = all ? [...SUPPORTED_TARGETS] : targets;
+  const chosenTargets = all ? [...DESKTOP_TARGETS] : targets;
 
   // Default behavior when called with no targets or only "web"
   if (

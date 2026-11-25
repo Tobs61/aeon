@@ -1,16 +1,17 @@
-import { calendarNameKey, FOLDER_COLOR_KEYS } from './colors.ts';
+import {
+  type CalendarNamePref,
+  calendarNameKey,
+  FOLDER_COLOR_KEYS,
+} from './colors.ts';
 import {
   parseIcsContent,
   removeEventFromIcsContent,
   type SerializableVEvent,
+  serializeCalendarEventsToIcs,
   slugifyIcsFilename,
   upsertEventInIcsContent,
 } from './ics.ts';
-import type {
-  FolderColorKey,
-  IcsCalendar,
-  IcsEvent,
-} from '../types/calendar.ts';
+import type { IcsCalendar, IcsEvent } from '../types/calendar.ts';
 
 export interface LocalRootMount {
   folderName: string;
@@ -24,6 +25,18 @@ export interface LocalFileEntry {
   fileHandle: FileSystemFileHandle;
 }
 
+export interface LocalSnapshotFile {
+  calendarId: string;
+  fileName: string;
+  relativePath: string;
+  rawIcs: string;
+}
+
+export interface LocalSnapshotMount {
+  folderName: string;
+  files: Map<string, LocalSnapshotFile>;
+}
+
 export function isDirectoryPickerSupported(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -33,7 +46,7 @@ export function isDirectoryPickerSupported(): boolean {
   );
 }
 
-export async function ensureDirectoryPermission(
+async function ensureDirectoryPermission(
   handle: FileSystemDirectoryHandle,
   mode: 'read' | 'readwrite' = 'readwrite'
 ): Promise<boolean> {
@@ -110,138 +123,18 @@ async function walkDirectory(
   }
 }
 
-export async function scanLocalRootRecursive(
-  mount: LocalRootMount,
-  savedPrefs: Record<string, { color?: FolderColorKey; visible?: boolean }>
-): Promise<{
-  calendars: IcsCalendar[];
-  events: IcsEvent[];
-  fileMap: Map<string, LocalFileEntry>;
-}> {
-  const granted = await ensureDirectoryPermission(mount.handle, 'readwrite');
-  if (!granted) {
-    throw new Error('Access to the designated folder was denied.');
-  }
-
-  const discovered: Array<{
-    fileName: string;
-    relativePath: string;
-    fileHandle: FileSystemFileHandle;
-  }> = [];
-
-  await walkDirectory(mount.handle, '', discovered);
-  discovered.sort((a, b) => a.fileName.localeCompare(b.fileName));
-
-  const calendars: IcsCalendar[] = [];
-  const events: IcsEvent[] = [];
-  const fileMap = new Map<string, LocalFileEntry>();
-
-  for (let idx = 0; idx < discovered.length; idx++) {
-    const item = discovered[idx];
-    const calendarId = `local::${item.relativePath}`;
-    const file = await item.fileHandle.getFile();
-    const raw = await file.text();
-    const parsed = parseIcsContent(raw, {
-      calendarId,
-      fileName: item.fileName,
-      relativePath: item.relativePath,
-      source: 'local-pc',
-    });
-
-    const nameKey = calendarNameKey(item.fileName);
-    const pref = savedPrefs[nameKey] ?? savedPrefs[calendarId] ?? {};
-    const color =
-      pref.color ?? FOLDER_COLOR_KEYS[idx % FOLDER_COLOR_KEYS.length];
-    const visible = typeof pref.visible === 'boolean' ? pref.visible : true;
-
-    calendars.push({
-      id: calendarId,
-      fileName: item.fileName,
-      relativePath: item.relativePath,
-      color,
-      visible,
-      source: 'local-pc',
-      eventCount: parsed.length,
-    });
-    events.push(...parsed);
-    fileMap.set(calendarId, {
-      calendarId,
-      fileName: item.fileName,
-      relativePath: item.relativePath,
-      fileHandle: item.fileHandle,
-    });
-  }
-
-  return { calendars, events, fileMap };
-}
-
-export async function upsertEventInLocalFile(
-  fileHandle: FileSystemFileHandle,
-  eventData: SerializableVEvent
-): Promise<void> {
-  const file = await fileHandle.getFile();
-  const existingRaw = await file.text();
-  const updatedRaw = upsertEventInIcsContent(existingRaw, eventData);
-  const writable = await fileHandle.createWritable();
-  await writable.write(updatedRaw);
-  await writable.close();
-}
-
-export async function createNewLocalCalendarFile(
-  rootHandle: FileSystemDirectoryHandle,
-  rawName: string,
-  firstEvent?: SerializableVEvent
-): Promise<FileSystemFileHandle> {
-  const fileName = slugifyIcsFilename(rawName);
-  const fileHandle = await rootHandle.getFileHandle(fileName, { create: true });
-  const content = firstEvent
-    ? upsertEventInIcsContent(null, firstEvent)
-    : 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Aeon Calendar//Debian Local ICS 1.0//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nEND:VCALENDAR\r\n';
-  const writable = await fileHandle.createWritable();
-  await writable.write(content);
-  await writable.close();
-  return fileHandle;
-}
-
-export async function removeEventFromLocalFile(
-  fileHandle: FileSystemFileHandle,
-  uid: string
-): Promise<void> {
-  const file = await fileHandle.getFile();
-  const existingRaw = await file.text();
-  const updatedRaw = removeEventFromIcsContent(existingRaw, uid);
-  const writable = await fileHandle.createWritable();
-  await writable.write(updatedRaw);
-  await writable.close();
-}
-
-export interface LocalSnapshotFile {
-  calendarId: string;
-  fileName: string;
-  relativePath: string;
-  rawIcs: string;
-}
-
-export interface LocalSnapshotMount {
-  folderName: string;
-  files: Map<string, LocalSnapshotFile>;
-}
-
-export function buildCalendarsFromSnapshot(
-  snapshot: LocalSnapshotMount,
-  savedPrefs: Record<string, { color?: FolderColorKey; visible?: boolean }>
-): {
-  calendars: IcsCalendar[];
-  events: IcsEvent[];
-} {
-  const entries = Array.from(snapshot.files.values()).sort((a, b) =>
+function hydrateLocalCalendars(
+  items: LocalSnapshotFile[],
+  savedPrefs: Record<string, CalendarNamePref>
+): { calendars: IcsCalendar[]; events: IcsEvent[] } {
+  const sorted = [...items].sort((a, b) =>
     a.fileName.localeCompare(b.fileName)
   );
   const calendars: IcsCalendar[] = [];
   const events: IcsEvent[] = [];
 
-  for (let idx = 0; idx < entries.length; idx++) {
-    const item = entries[idx];
+  for (let idx = 0; idx < sorted.length; idx++) {
+    const item = sorted[idx];
     const parsed = parseIcsContent(item.rawIcs, {
       calendarId: item.calendarId,
       fileName: item.fileName,
@@ -270,9 +163,105 @@ export function buildCalendarsFromSnapshot(
   return { calendars, events };
 }
 
+export async function scanLocalRootRecursive(
+  mount: LocalRootMount,
+  savedPrefs: Record<string, CalendarNamePref>
+): Promise<{
+  calendars: IcsCalendar[];
+  events: IcsEvent[];
+  fileMap: Map<string, LocalFileEntry>;
+}> {
+  const granted = await ensureDirectoryPermission(mount.handle, 'readwrite');
+  if (!granted) {
+    throw new Error('Access to the designated folder was denied.');
+  }
+
+  const discovered: Array<{
+    fileName: string;
+    relativePath: string;
+    fileHandle: FileSystemFileHandle;
+  }> = [];
+
+  await walkDirectory(mount.handle, '', discovered);
+  discovered.sort((a, b) => a.fileName.localeCompare(b.fileName));
+
+  const snapshotItems: LocalSnapshotFile[] = [];
+  const fileMap = new Map<string, LocalFileEntry>();
+
+  for (const item of discovered) {
+    const calendarId = `local::${item.relativePath}`;
+    const file = await item.fileHandle.getFile();
+    const rawIcs = await file.text();
+    snapshotItems.push({
+      calendarId,
+      fileName: item.fileName,
+      relativePath: item.relativePath,
+      rawIcs,
+    });
+    fileMap.set(calendarId, {
+      calendarId,
+      fileName: item.fileName,
+      relativePath: item.relativePath,
+      fileHandle: item.fileHandle,
+    });
+  }
+
+  return { ...hydrateLocalCalendars(snapshotItems, savedPrefs), fileMap };
+}
+
+export async function upsertEventInLocalFile(
+  fileHandle: FileSystemFileHandle,
+  eventData: SerializableVEvent
+): Promise<void> {
+  const file = await fileHandle.getFile();
+  const existingRaw = await file.text();
+  const updatedRaw = upsertEventInIcsContent(existingRaw, eventData);
+  const writable = await fileHandle.createWritable();
+  await writable.write(updatedRaw);
+  await writable.close();
+}
+
+export async function createNewLocalCalendarFile(
+  rootHandle: FileSystemDirectoryHandle,
+  rawName: string,
+  firstEvent?: SerializableVEvent
+): Promise<FileSystemFileHandle> {
+  const fileName = slugifyIcsFilename(rawName);
+  const fileHandle = await rootHandle.getFileHandle(fileName, { create: true });
+  const content = firstEvent
+    ? upsertEventInIcsContent(null, firstEvent)
+    : serializeCalendarEventsToIcs([]);
+  const writable = await fileHandle.createWritable();
+  await writable.write(content);
+  await writable.close();
+  return fileHandle;
+}
+
+export async function removeEventFromLocalFile(
+  fileHandle: FileSystemFileHandle,
+  uid: string
+): Promise<void> {
+  const file = await fileHandle.getFile();
+  const existingRaw = await file.text();
+  const updatedRaw = removeEventFromIcsContent(existingRaw, uid);
+  const writable = await fileHandle.createWritable();
+  await writable.write(updatedRaw);
+  await writable.close();
+}
+
+export function buildCalendarsFromSnapshot(
+  snapshot: LocalSnapshotMount,
+  savedPrefs: Record<string, CalendarNamePref>
+): {
+  calendars: IcsCalendar[];
+  events: IcsEvent[];
+} {
+  return hydrateLocalCalendars(Array.from(snapshot.files.values()), savedPrefs);
+}
+
 export async function scanWebkitFolderFiles(
   fileList: FileList | File[],
-  savedPrefs: Record<string, { color?: FolderColorKey; visible?: boolean }>
+  savedPrefs: Record<string, CalendarNamePref>
 ): Promise<{
   mount: LocalSnapshotMount;
   calendars: IcsCalendar[];
@@ -314,4 +303,3 @@ export async function scanWebkitFolderFiles(
   const parsed = buildCalendarsFromSnapshot(mount, savedPrefs);
   return { mount, ...parsed };
 }
-

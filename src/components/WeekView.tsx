@@ -1,4 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  clamp,
+  type DragMode,
+  findDropDatasetKey,
+  HOURS,
+  layoutTimedOccurrences,
+  MIN_DURATION_MINUTES,
+  minutesRangeToDates,
+  minutesToTimeLabel,
+  type PositionedTimedOccurrence,
+  shiftOccurrenceByDayKeys,
+  snapMinutes,
+} from '../lib/calendarLayout.ts';
 import { FOLDER_COLOR_STYLES } from '../lib/colors.ts';
 import {
   addDays,
@@ -40,22 +53,6 @@ interface WeekViewProps {
 }
 
 const HOUR_HEIGHT = 56;
-const SNAP_MINUTES = 15;
-const MIN_DURATION_MINUTES = 15;
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
-
-interface PositionedOccurrence {
-  occ: IcsOccurrence;
-  dayIndex: number;
-  startMinutes: number;
-  endMinutes: number;
-  topPx: number;
-  heightPx: number;
-  colIndex: number;
-  totalCols: number;
-}
-
-type DragMode = 'move' | 'resize-start' | 'resize-end';
 
 interface DragInteraction {
   mode: DragMode;
@@ -81,115 +78,6 @@ interface AllDayDragState {
   hasMoved: boolean;
   origDayKey: string;
   hoverDayKey: string | null;
-}
-
-function snapMinutes(mins: number): number {
-  return Math.round(mins / SNAP_MINUTES) * SNAP_MINUTES;
-}
-
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}
-
-function minutesToTimeLabel(totalMinutes: number): string {
-  const clamped = clamp(totalMinutes, 0, 24 * 60);
-  const hh = Math.floor(clamped / 60);
-  const mm = clamped % 60;
-  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-}
-
-function findAllDayDropKey(x: number, y: number): string | null {
-  const els = document.elementsFromPoint(x, y);
-  for (const el of els) {
-    const key = (el as HTMLElement).dataset?.alldayDrop;
-    if (key) return key;
-  }
-  return null;
-}
-
-function layoutDayOccurrences(
-  dayIndex: number,
-  dayStart: Date,
-  occurrences: IcsOccurrence[]
-): PositionedOccurrence[] {
-  const dayEnd = endOfDay(dayStart);
-  const items = occurrences
-    .map((occ) => {
-      const clampedStart =
-        occ.startDate < dayStart ? dayStart : occ.startDate;
-      const clampedEnd = occ.endDate > dayEnd ? dayEnd : occ.endDate;
-      const startMinutes =
-        clampedStart.getHours() * 60 + clampedStart.getMinutes();
-      const endMinutes = Math.max(
-        startMinutes + 25,
-        clampedEnd.getHours() * 60 +
-          clampedEnd.getMinutes() +
-          (clampedEnd.getDate() !== clampedStart.getDate() ? 24 * 60 : 0)
-      );
-      return {
-        occ,
-        startMinutes,
-        endMinutes: Math.min(24 * 60, endMinutes),
-      };
-    })
-    .sort(
-      (a, b) =>
-        a.startMinutes - b.startMinutes || b.endMinutes - a.endMinutes
-    );
-
-  const positioned: PositionedOccurrence[] = [];
-  let cluster: typeof items = [];
-  let clusterMaxEnd = -1;
-
-  const flushCluster = () => {
-    if (cluster.length === 0) return;
-    const colsEnd: number[] = [];
-    const assignedCols: number[] = [];
-
-    for (const item of cluster) {
-      let col = colsEnd.findIndex((endMin) => endMin <= item.startMinutes);
-      if (col === -1) {
-        col = colsEnd.length;
-        colsEnd.push(item.endMinutes);
-      } else {
-        colsEnd[col] = item.endMinutes;
-      }
-      assignedCols.push(col);
-    }
-
-    const totalCols = Math.max(1, colsEnd.length);
-    cluster.forEach((item, idx) => {
-      const topPx = (item.startMinutes / 60) * HOUR_HEIGHT;
-      const heightPx = Math.max(
-        24,
-        ((item.endMinutes - item.startMinutes) / 60) * HOUR_HEIGHT
-      );
-      positioned.push({
-        occ: item.occ,
-        dayIndex,
-        startMinutes: item.startMinutes,
-        endMinutes: item.endMinutes,
-        topPx,
-        heightPx,
-        colIndex: assignedCols[idx],
-        totalCols,
-      });
-    });
-
-    cluster = [];
-    clusterMaxEnd = -1;
-  };
-
-  for (const item of items) {
-    if (cluster.length > 0 && item.startMinutes >= clusterMaxEnd) {
-      flushCluster();
-    }
-    cluster.push(item);
-    clusterMaxEnd = Math.max(clusterMaxEnd, item.endMinutes);
-  }
-  flushCluster();
-
-  return positioned;
 }
 
 export function WeekView({
@@ -340,25 +228,11 @@ export function WeekView({
       if (!changed) return;
 
       const targetDay = weekDays[current.currentDayIndex];
-      const newStart = new Date(targetDay);
-      newStart.setHours(
-        Math.floor(current.currentStartMinutes / 60),
-        current.currentStartMinutes % 60,
-        0,
-        0
+      const { start: newStart, end: newEnd } = minutesRangeToDates(
+        targetDay,
+        current.currentStartMinutes,
+        current.currentEndMinutes
       );
-
-      const newEnd = new Date(targetDay);
-      if (current.currentEndMinutes >= 24 * 60) {
-        newEnd.setHours(23, 59, 0, 0);
-      } else {
-        newEnd.setHours(
-          Math.floor(current.currentEndMinutes / 60),
-          current.currentEndMinutes % 60,
-          0,
-          0
-        );
-      }
 
       void onUpdateEventTiming(current.occ, newStart, newEnd);
     };
@@ -387,7 +261,7 @@ export function WeekView({
       );
       const hasMoved = curr.hasMoved || dist > 5;
       const hoverDayKey = hasMoved
-        ? findAllDayDropKey(e.clientX, e.clientY)
+        ? findDropDatasetKey(e.clientX, e.clientY, 'alldayDrop')
         : null;
 
       setAllDayDrag((prev) =>
@@ -415,19 +289,14 @@ export function WeekView({
         return;
       }
 
-      if (curr.hoverDayKey && curr.hoverDayKey !== curr.origDayKey) {
-        const [ty, tm, td] = curr.hoverDayKey.split('-').map(Number);
-        const [oy, om, od] = curr.origDayKey.split('-').map(Number);
-        const targetDayStart = new Date(ty, (tm || 1) - 1, td || 1);
-        const origCellStart = new Date(oy, (om || 1) - 1, od || 1);
-        const diffDays = Math.round(
-          (targetDayStart.getTime() - origCellStart.getTime()) /
-            (24 * 60 * 60 * 1000)
+      if (curr.hoverDayKey) {
+        const shifted = shiftOccurrenceByDayKeys(
+          curr.occ,
+          curr.origDayKey,
+          curr.hoverDayKey
         );
-        if (diffDays !== 0) {
-          const newStart = addDays(curr.occ.startDate, diffDays);
-          const newEnd = addDays(curr.occ.endDate, diffDays);
-          void onUpdateEventTiming(curr.occ, newStart, newEnd);
+        if (shifted) {
+          void onUpdateEventTiming(curr.occ, shifted.start, shifted.end);
         }
       }
     };
@@ -445,7 +314,7 @@ export function WeekView({
   const startDragInteraction = (
     e: React.PointerEvent,
     mode: DragMode,
-    item: PositionedOccurrence
+    item: PositionedTimedOccurrence
   ) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -656,7 +525,13 @@ export function WeekView({
               const dayEvents = timedOccs.filter(
                 (o) => o.startDate < dEnd && o.endDate > dStart
               );
-              const positioned = layoutDayOccurrences(dayIdx, dStart, dayEvents);
+              const positioned = layoutTimedOccurrences(
+                dayIdx,
+                dStart,
+                dayEvents,
+                HOUR_HEIGHT,
+                24
+              );
               const isToday = isSameDay(day, today);
 
               const activePreviewHere =

@@ -8,6 +8,7 @@ import {
   parseIcsContent,
   removeEventFromIcsContent,
   type SerializableVEvent,
+  serializeCalendarEventsToIcs,
   slugifyIcsFilename,
   upsertEventInIcsContent,
 } from './ics.ts';
@@ -84,10 +85,6 @@ export async function tauriPickCalendarFolder(): Promise<TauriFolderInfo | null>
   return tauriInvoke<TauriFolderInfo | null>('pick_calendar_folder');
 }
 
-export async function tauriResetCalendarFolder(): Promise<TauriFolderInfo> {
-  return tauriInvoke<TauriFolderInfo>('reset_calendar_folder');
-}
-
 export async function tauriScanCalendars(): Promise<{
   rootFolderName: string;
   isDefault: boolean;
@@ -143,7 +140,7 @@ export async function tauriCreateCalendarFile(
   const fileName = slugifyIcsFilename(rawName);
   const content = firstEvent
     ? upsertEventInIcsContent(null, firstEvent)
-    : 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Aeon Calendar//Debian Local ICS 1.0//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nEND:VCALENDAR\r\n';
+    : serializeCalendarEventsToIcs([]);
   await tauriInvoke<void>('write_ics_file', {
     relativePath: fileName,
     content,
@@ -198,23 +195,6 @@ export async function tauriDeleteEvent(
   });
 }
 
-export async function tauriImportIcsFiles(
-  files: Array<{ fileName: string; content: string }>
-): Promise<number> {
-  let count = 0;
-  for (const item of files) {
-    if (!item.content.includes('BEGIN:VCALENDAR')) continue;
-    const safeName = slugifyIcsFilename(item.fileName);
-    await tauriInvoke<void>('write_ics_file', {
-      relativePath: safeName,
-      content: item.content,
-      createOnly: false,
-    });
-    count++;
-  }
-  return count;
-}
-
 export async function tauriMinimizeWindow(): Promise<void> {
   if (!isTauriRuntime()) return;
   await getCurrentWindow().minimize();
@@ -225,11 +205,6 @@ export async function tauriToggleMaximizeWindow(): Promise<boolean> {
   const win = getCurrentWindow();
   await win.toggleMaximize();
   return win.isMaximized();
-}
-
-export async function tauriIsWindowMaximized(): Promise<boolean> {
-  if (!isTauriRuntime()) return false;
-  return getCurrentWindow().isMaximized();
 }
 
 export async function tauriCloseWindow(): Promise<void> {

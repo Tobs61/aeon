@@ -20,6 +20,7 @@ import {
 } from './lib/colors.ts';
 import {
   addDays,
+  draftEndToIcsEnd,
   formatDayTitle,
   formatMonthTitle,
   formatWeekRangeTitle,
@@ -42,9 +43,11 @@ import {
 } from './lib/fsAccess.ts';
 import {
   dateToIsoLocal,
+  generateEventUid,
   isoToLocalDate,
   removeEventFromIcsContent,
   type SerializableVEvent,
+  serializeCalendarEventsToIcs,
   slugifyIcsFilename,
   updateRruleWeekday,
   upsertEventInIcsContent,
@@ -105,6 +108,77 @@ function emitTerminalLog(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ level, action, detail }),
   }).catch(() => undefined);
+}
+
+function buildNewEventDraft(
+  date: Date,
+  hour: number,
+  allDay: boolean,
+  calendarId: string
+): EventDraft {
+  const start = new Date(date);
+  start.setHours(hour, 0, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return {
+    summary: '',
+    description: '',
+    location: '',
+    startDate: toDateInputString(start),
+    startTime: toTimeInputString(start),
+    endDate: toDateInputString(end),
+    endTime: toTimeInputString(end),
+    allDay,
+    rrule: '',
+    calendarId,
+    newFileName: '',
+    status: 'CONFIRMED',
+  };
+}
+
+function buildOccurrenceDraft(
+  occ: IcsOccurrence,
+  summaryOverride?: string
+): EventDraft {
+  const evt = occ.event;
+  const displayEnd = evt.allDay ? addDays(occ.endDate, -1) : occ.endDate;
+  const safeDisplayEnd =
+    displayEnd < occ.startDate ? occ.startDate : displayEnd;
+  return {
+    uid: summaryOverride ? undefined : evt.uid,
+    summary: summaryOverride ?? evt.summary,
+    description: evt.description ?? '',
+    location: evt.location ?? '',
+    startDate: toDateInputString(occ.startDate),
+    startTime: toTimeInputString(occ.startDate),
+    endDate: toDateInputString(safeDisplayEnd),
+    endTime: toTimeInputString(occ.endDate),
+    allDay: evt.allDay,
+    rrule: evt.rrule ?? '',
+    calendarId: evt.calendarId,
+    newFileName: '',
+    status: evt.status ?? 'CONFIRMED',
+  };
+}
+
+async function persistCalendarPref(
+  cal: IcsCalendar,
+  patch: CalendarNamePref
+): Promise<void> {
+  if (isTauriRuntime()) {
+    await tauriUpdateCalendarPrefs(cal.relativePath, patch).catch(
+      () => undefined
+    );
+  } else if (cal.source !== 'local-pc') {
+    await fetch('/api/calendars', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        calendarName: cal.fileName,
+        relativePath: cal.relativePath,
+        ...patch,
+      }),
+    }).catch(() => undefined);
+  }
 }
 
 export default function App() {
@@ -276,61 +350,33 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const dismissAllOverlays = useCallback(() => {
+    setEventModalState(null);
+    setSelectedOccurrence(null);
+    setSettingsModalOpen(false);
+    setShortcutsModalOpen(false);
+    setMobileSidebarOpen(false);
+  }, []);
+
   const openCreateModal = useCallback(
     (date: Date, hour = 9, allDay = false) => {
-      const start = new Date(date);
-      start.setHours(hour, 0, 0, 0);
-      const end = new Date(start.getTime() + 60 * 60 * 1000);
       const defaultCalendar =
         calendars.find((c) => c.visible)?.id ?? calendars[0]?.id ?? '__new__';
-
       setEventModalState({
         open: true,
         editingEvent: null,
-        draft: {
-          summary: '',
-          description: '',
-          location: '',
-          startDate: toDateInputString(start),
-          startTime: toTimeInputString(start),
-          endDate: toDateInputString(end),
-          endTime: toTimeInputString(end),
-          allDay,
-          rrule: '',
-          calendarId: defaultCalendar,
-          newFileName: '',
-          status: 'CONFIRMED',
-        },
+        draft: buildNewEventDraft(date, hour, allDay, defaultCalendar),
       });
     },
     [calendars]
   );
 
   const openEditModal = useCallback((occ: IcsOccurrence) => {
-    const evt = occ.event;
-    const displayEnd = evt.allDay ? addDays(occ.endDate, -1) : occ.endDate;
-    const safeDisplayEnd =
-      displayEnd < occ.startDate ? occ.startDate : displayEnd;
-
     setSelectedOccurrence(null);
     setEventModalState({
       open: true,
-      editingEvent: evt,
-      draft: {
-        uid: evt.uid,
-        summary: evt.summary,
-        description: evt.description ?? '',
-        location: evt.location ?? '',
-        startDate: toDateInputString(occ.startDate),
-        startTime: toTimeInputString(occ.startDate),
-        endDate: toDateInputString(safeDisplayEnd),
-        endTime: toTimeInputString(occ.endDate),
-        allDay: evt.allDay,
-        rrule: evt.rrule ?? '',
-        calendarId: evt.calendarId,
-        newFileName: '',
-        status: evt.status ?? 'CONFIRMED',
-      },
+      editingEvent: occ.event,
+      draft: buildOccurrenceDraft(occ),
     });
   }, []);
 
@@ -379,11 +425,7 @@ export default function App() {
           setContextMenu(null);
           return;
         }
-        setEventModalState(null);
-        setSelectedOccurrence(null);
-        setSettingsModalOpen(false);
-        setShortcutsModalOpen(false);
-        setMobileSidebarOpen(false);
+        dismissAllOverlays();
         return;
       }
 
@@ -445,6 +487,7 @@ export default function App() {
   }, [
     activeDate,
     contextMenu,
+    dismissAllOverlays,
     eventModalState,
     handleNext,
     handlePrev,
@@ -474,22 +517,7 @@ export default function App() {
       visible: nextVisible,
     });
     setLocalPrefs(updatedByName);
-
-    if (isTauriRuntime()) {
-      await tauriUpdateCalendarPrefs(cal.relativePath, {
-        visible: nextVisible,
-      }).catch(() => undefined);
-    } else if (cal.source !== 'local-pc') {
-      await fetch('/api/calendars', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          calendarName: cal.fileName,
-          relativePath: cal.relativePath,
-          visible: nextVisible,
-        }),
-      }).catch(() => undefined);
-    }
+    await persistCalendarPref(cal, { visible: nextVisible });
   };
 
   const handleChangeCalendarColor = async (
@@ -512,21 +540,7 @@ export default function App() {
       `Set color for "${cal.fileName.replace(/\.ics$/i, '')}" to ${color}`
     );
 
-    if (isTauriRuntime()) {
-      await tauriUpdateCalendarPrefs(cal.relativePath, { color }).catch(
-        () => undefined
-      );
-    } else if (cal.source !== 'local-pc') {
-      await fetch('/api/calendars', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          calendarName: cal.fileName,
-          relativePath: cal.relativePath,
-          color,
-        }),
-      }).catch(() => undefined);
-    }
+    await persistCalendarPref(cal, { color });
   };
 
   const handleSaveEvent = async (draft: EventDraft) => {
@@ -536,22 +550,10 @@ export default function App() {
     const startVal = draft.allDay
       ? draft.startDate
       : `${draft.startDate}T${draft.startTime}:00`;
-
-    let endVal: string;
-    if (draft.allDay) {
-      const [y, m, d] = draft.endDate.split('-').map(Number);
-      const inclusiveEnd = new Date(y, (m || 1) - 1, d || 1);
-      endVal = toDateInputString(addDays(inclusiveEnd, 1));
-    } else {
-      endVal = `${draft.endDate}T${draft.endTime}:00`;
-    }
+    const endVal = draftEndToIcsEnd(draft.endDate, draft.endTime, draft.allDay);
 
     const eventPayload: SerializableVEvent = {
-      uid:
-        editing?.uid ??
-        `aeon-${Date.now().toString(36)}-${Math.random()
-          .toString(36)
-          .slice(2, 7)}@local`,
+      uid: editing?.uid ?? generateEventUid(),
       summary: draft.summary.trim(),
       description: draft.description,
       location: draft.location,
@@ -968,8 +970,7 @@ export default function App() {
           calendarId,
           fileName: safeName,
           relativePath: safeName,
-          rawIcs:
-            'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Aeon Calendar//Debian Local ICS 1.0//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nEND:VCALENDAR\r\n',
+          rawIcs: serializeCalendarEventsToIcs([]),
         });
       }
       const nextSnapshot: LocalSnapshotMount = {
@@ -1045,21 +1046,7 @@ export default function App() {
       setLocalPrefs(latestPrefs);
 
       for (const c of updatedList) {
-        if (isTauriRuntime()) {
-          await tauriUpdateCalendarPrefs(c.relativePath, {
-            visible: c.visible,
-          }).catch(() => undefined);
-        } else if (c.source !== 'local-pc') {
-          await fetch('/api/calendars', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              calendarName: c.fileName,
-              relativePath: c.relativePath,
-              visible: c.visible,
-            }),
-          }).catch(() => undefined);
-        }
+        await persistCalendarPref(c, { visible: c.visible });
       }
     },
     [calendars, localPrefs]
@@ -1067,55 +1054,21 @@ export default function App() {
 
   const handleCreateInCalendar = useCallback(
     (calendarId: string) => {
-      const start = new Date(activeDate);
-      start.setHours(9, 0, 0, 0);
-      const end = new Date(start.getTime() + 60 * 60 * 1000);
       setEventModalState({
         open: true,
         editingEvent: null,
-        draft: {
-          summary: '',
-          description: '',
-          location: '',
-          startDate: toDateInputString(start),
-          startTime: toTimeInputString(start),
-          endDate: toDateInputString(end),
-          endTime: toTimeInputString(end),
-          allDay: false,
-          rrule: '',
-          calendarId,
-          newFileName: '',
-          status: 'CONFIRMED',
-        },
+        draft: buildNewEventDraft(activeDate, 9, false, calendarId),
       });
     },
     [activeDate]
   );
 
   const handleDuplicateEvent = useCallback((occ: IcsOccurrence) => {
-    const evt = occ.event;
-    const displayEnd = evt.allDay ? addDays(occ.endDate, -1) : occ.endDate;
-    const safeDisplayEnd =
-      displayEnd < occ.startDate ? occ.startDate : displayEnd;
-
     setSelectedOccurrence(null);
     setEventModalState({
       open: true,
       editingEvent: null,
-      draft: {
-        summary: `${evt.summary} (Copy)`,
-        description: evt.description ?? '',
-        location: evt.location ?? '',
-        startDate: toDateInputString(occ.startDate),
-        startTime: toTimeInputString(occ.startDate),
-        endDate: toDateInputString(safeDisplayEnd),
-        endTime: toTimeInputString(occ.endDate),
-        allDay: evt.allDay,
-        rrule: evt.rrule ?? '',
-        calendarId: evt.calendarId,
-        newFileName: '',
-        status: evt.status ?? 'CONFIRMED',
-      },
+      draft: buildOccurrenceDraft(occ, `${occ.event.summary} (Copy)`),
     });
   }, []);
 
@@ -1185,14 +1138,6 @@ export default function App() {
       selectedOccurrence ||
       mobileSidebarOpen
   );
-
-  const dismissAllOverlays = useCallback(() => {
-    setEventModalState(null);
-    setSelectedOccurrence(null);
-    setSettingsModalOpen(false);
-    setShortcutsModalOpen(false);
-    setMobileSidebarOpen(false);
-  }, []);
 
   const selectedCalendar = selectedOccurrence
     ? calendars.find((c) => c.id === selectedOccurrence.event.calendarId)

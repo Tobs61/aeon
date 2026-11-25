@@ -1,7 +1,7 @@
 import { Check, ChevronDown, FileCode2, Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FOLDER_COLOR_STYLES } from '../lib/colors.ts';
-import { addDays, toDateInputString } from '../lib/dateUtils.ts';
+import { draftEndToIcsEnd } from '../lib/dateUtils.ts';
 import { serializeEventToIcs, slugifyIcsFilename } from '../lib/ics.ts';
 import type { EventDraft, IcsCalendar, IcsEvent } from '../types/calendar.ts';
 
@@ -91,14 +91,10 @@ export function EventModal({
     [draft.rrule]
   );
 
-  const computedEndForIcs = useMemo(() => {
-    if (!draft.allDay) {
-      return `${draft.endDate}T${draft.endTime}:00`;
-    }
-    const [y, m, d] = draft.endDate.split('-').map(Number);
-    const inclusiveEnd = new Date(y, (m || 1) - 1, d || 1);
-    return toDateInputString(addDays(inclusiveEnd, 1));
-  }, [draft.allDay, draft.endDate, draft.endTime]);
+  const computedEndForIcs = useMemo(
+    () => draftEndToIcsEnd(draft.endDate, draft.endTime, draft.allDay),
+    [draft.allDay, draft.endDate, draft.endTime]
+  );
 
   const targetFilename = useMemo(() => {
     if (isCreatingNewFile) {

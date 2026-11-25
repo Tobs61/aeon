@@ -1,4 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  clamp,
+  type DragMode,
+  HOURS,
+  layoutTimedOccurrences,
+  MIN_DURATION_MINUTES,
+  minutesRangeToDates,
+  minutesToTimeLabel,
+  type PositionedTimedOccurrence,
+  snapMinutes,
+} from '../lib/calendarLayout.ts';
 import { FOLDER_COLOR_STYLES } from '../lib/colors.ts';
 import {
   endOfDay,
@@ -35,21 +46,6 @@ interface DayViewProps {
 }
 
 const HOUR_HEIGHT = 60;
-const SNAP_MINUTES = 15;
-const MIN_DURATION_MINUTES = 15;
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
-
-interface PositionedOccurrence {
-  occ: IcsOccurrence;
-  startMinutes: number;
-  endMinutes: number;
-  topPx: number;
-  heightPx: number;
-  colIndex: number;
-  totalCols: number;
-}
-
-type DragMode = 'move' | 'resize-start' | 'resize-end';
 
 interface DragInteraction {
   mode: DragMode;
@@ -62,102 +58,6 @@ interface DragInteraction {
   grabOffsetMinutes: number;
   currentStartMinutes: number;
   currentEndMinutes: number;
-}
-
-function snapMinutes(mins: number): number {
-  return Math.round(mins / SNAP_MINUTES) * SNAP_MINUTES;
-}
-
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}
-
-function minutesToTimeLabel(totalMinutes: number): string {
-  const clamped = clamp(totalMinutes, 0, 24 * 60);
-  const hh = Math.floor(clamped / 60);
-  const mm = clamped % 60;
-  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-}
-
-function layoutSingleDayOccurrences(
-  dayStart: Date,
-  occurrences: IcsOccurrence[]
-): PositionedOccurrence[] {
-  const dayEnd = endOfDay(dayStart);
-  const items = occurrences
-    .map((occ) => {
-      const clampedStart = occ.startDate < dayStart ? dayStart : occ.startDate;
-      const clampedEnd = occ.endDate > dayEnd ? dayEnd : occ.endDate;
-      const startMinutes =
-        clampedStart.getHours() * 60 + clampedStart.getMinutes();
-      const endMinutes = Math.max(
-        startMinutes + 25,
-        clampedEnd.getHours() * 60 +
-          clampedEnd.getMinutes() +
-          (clampedEnd.getDate() !== clampedStart.getDate() ? 24 * 60 : 0)
-      );
-      return {
-        occ,
-        startMinutes,
-        endMinutes: Math.min(24 * 60, endMinutes),
-      };
-    })
-    .sort(
-      (a, b) => a.startMinutes - b.startMinutes || b.endMinutes - a.endMinutes
-    );
-
-  const positioned: PositionedOccurrence[] = [];
-  let cluster: typeof items = [];
-  let clusterMaxEnd = -1;
-
-  const flushCluster = () => {
-    if (cluster.length === 0) return;
-    const colsEnd: number[] = [];
-    const assignedCols: number[] = [];
-
-    for (const item of cluster) {
-      let col = colsEnd.findIndex((endMin) => endMin <= item.startMinutes);
-      if (col === -1) {
-        col = colsEnd.length;
-        colsEnd.push(item.endMinutes);
-      } else {
-        colsEnd[col] = item.endMinutes;
-      }
-      assignedCols.push(col);
-    }
-
-    const totalCols = Math.max(1, colsEnd.length);
-    cluster.forEach((item, idx) => {
-      const topPx = (item.startMinutes / 60) * HOUR_HEIGHT;
-      const heightPx = Math.max(
-        28,
-        ((item.endMinutes - item.startMinutes) / 60) * HOUR_HEIGHT
-      );
-      positioned.push({
-        occ: item.occ,
-        startMinutes: item.startMinutes,
-        endMinutes: item.endMinutes,
-        topPx,
-        heightPx,
-        colIndex: assignedCols[idx],
-        totalCols,
-      });
-    });
-
-    cluster = [];
-    clusterMaxEnd = -1;
-  };
-
-  for (const item of items) {
-    if (cluster.length > 0 && item.startMinutes >= clusterMaxEnd) {
-      flushCluster();
-    }
-    cluster.push(item);
-    clusterMaxEnd = Math.max(clusterMaxEnd, item.endMinutes);
-  }
-  flushCluster();
-
-  return positioned;
 }
 
 export function DayView({
@@ -201,7 +101,7 @@ export function DayView({
     [occurrences]
   );
   const positioned = useMemo(
-    () => layoutSingleDayOccurrences(dayStart, timedOccs),
+    () => layoutTimedOccurrences(0, dayStart, timedOccs, HOUR_HEIGHT, 28),
     [dayStart, timedOccs]
   );
 
@@ -290,25 +190,11 @@ export function DayView({
         current.currentEndMinutes !== current.origEndMinutes;
       if (!changed) return;
 
-      const newStart = new Date(dayStart);
-      newStart.setHours(
-        Math.floor(current.currentStartMinutes / 60),
-        current.currentStartMinutes % 60,
-        0,
-        0
+      const { start: newStart, end: newEnd } = minutesRangeToDates(
+        dayStart,
+        current.currentStartMinutes,
+        current.currentEndMinutes
       );
-
-      const newEnd = new Date(dayStart);
-      if (current.currentEndMinutes >= 24 * 60) {
-        newEnd.setHours(23, 59, 0, 0);
-      } else {
-        newEnd.setHours(
-          Math.floor(current.currentEndMinutes / 60),
-          current.currentEndMinutes % 60,
-          0,
-          0
-        );
-      }
 
       void onUpdateEventTiming(current.occ, newStart, newEnd);
     };
@@ -326,7 +212,7 @@ export function DayView({
   const startDragInteraction = (
     e: React.PointerEvent,
     mode: DragMode,
-    item: PositionedOccurrence
+    item: PositionedTimedOccurrence
   ) => {
     if (e.button !== 0) return;
     e.preventDefault();

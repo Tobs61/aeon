@@ -1,3 +1,4 @@
+import { parseRruleParts } from './dateUtils.ts';
 import type { FolderSource, IcsEvent, IcsOccurrence } from '../types/calendar.ts';
 
 interface ParseMeta {
@@ -5,6 +6,12 @@ interface ParseMeta {
   fileName: string;
   relativePath: string;
   source: FolderSource;
+}
+
+export function generateEventUid(): string {
+  return `aeon-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 7)}@local`;
 }
 
 export interface SerializableVEvent {
@@ -68,7 +75,7 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-export function parseIcsDateValue(
+function parseIcsDateValue(
   rawValue: string,
   params: Record<string, string>
 ): { iso: string; allDay: boolean } {
@@ -318,7 +325,7 @@ function formatUtcStamp(date: Date): string {
   )}Z`;
 }
 
-export function buildVEventLines(event: SerializableVEvent): string[] {
+function buildVEventLines(event: SerializableVEvent): string[] {
   const lines: string[] = [
     'BEGIN:VEVENT',
     `UID:${event.uid}`,
@@ -382,9 +389,33 @@ export function serializeCalendarEventsToIcs(
   return lines.map(foldIcsLine).join('\r\n') + '\r\n';
 }
 
+function toSerializableVEvent(item: IcsEvent): SerializableVEvent {
+  return {
+    uid: item.uid,
+    summary: item.summary,
+    description: item.description,
+    location: item.location,
+    start: item.start,
+    end: item.end,
+    allDay: item.allDay,
+    rrule: item.rrule,
+    status: item.status,
+    categories: item.categories,
+  };
+}
+
+function parseRawEvents(raw: string): IcsEvent[] {
+  return parseIcsContent(raw, {
+    calendarId: 'tmp',
+    fileName: 'tmp.ics',
+    relativePath: 'tmp.ics',
+    source: 'workspace',
+  });
+}
+
 /**
  * Inserts or updates a VEVENT (by UID) inside an existing .ics file's text,
- * preserving all other VEVENT blocks and VCALENDAR headers.
+ * preserving all other VEVENT blocks.
  */
 export function upsertEventInIcsContent(
   existingRaw: string | null,
@@ -394,32 +425,16 @@ export function upsertEventInIcsContent(
     return serializeCalendarEventsToIcs([event]);
   }
 
-  const parsedExisting = parseIcsContent(existingRaw, {
-    calendarId: 'tmp',
-    fileName: 'tmp.ics',
-    relativePath: 'tmp.ics',
-    source: 'workspace',
-  });
-
+  const parsedExisting = parseRawEvents(existingRaw);
   const updatedList: SerializableVEvent[] = [];
   let replaced = false;
+
   for (const item of parsedExisting) {
     if (item.uid === event.uid) {
       updatedList.push(event);
       replaced = true;
     } else {
-      updatedList.push({
-        uid: item.uid,
-        summary: item.summary,
-        description: item.description,
-        location: item.location,
-        start: item.start,
-        end: item.end,
-        allDay: item.allDay,
-        rrule: item.rrule,
-        status: item.status,
-        categories: item.categories,
-      });
+      updatedList.push(toSerializableVEvent(item));
     }
   }
   if (!replaced) {
@@ -437,27 +452,9 @@ export function removeEventFromIcsContent(
   existingRaw: string,
   uid: string
 ): string {
-  const parsedExisting = parseIcsContent(existingRaw, {
-    calendarId: 'tmp',
-    fileName: 'tmp.ics',
-    relativePath: 'tmp.ics',
-    source: 'workspace',
-  });
-
-  const remaining: SerializableVEvent[] = parsedExisting
+  const remaining = parseRawEvents(existingRaw)
     .filter((item) => item.uid !== uid)
-    .map((item) => ({
-      uid: item.uid,
-      summary: item.summary,
-      description: item.description,
-      location: item.location,
-      start: item.start,
-      end: item.end,
-      allDay: item.allDay,
-      rrule: item.rrule,
-      status: item.status,
-      categories: item.categories,
-    }));
+    .map(toSerializableVEvent);
 
   return serializeCalendarEventsToIcs(remaining);
 }
@@ -567,11 +564,7 @@ export function expandEventsInRange(
       continue;
     }
 
-    const parts: Record<string, string> = {};
-    for (const seg of event.rrule.split(';')) {
-      const [k, v] = seg.split('=');
-      if (k && v) parts[k.toUpperCase()] = v.toUpperCase();
-    }
+    const parts = parseRruleParts(event.rrule);
 
     const freq = parts.FREQ;
     const interval = Math.max(1, Number(parts.INTERVAL || 1));

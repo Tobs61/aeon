@@ -9,6 +9,7 @@ import {
 import { useRef, useState } from 'react';
 import { isDirectoryPickerSupported } from '../lib/fsAccess.ts';
 import { isTauriRuntime } from '../lib/tauriRuntime.ts';
+import { APP_VERSION } from '../lib/version.ts';
 import type { FirstDayOfWeek } from '../types/calendar.ts';
 
 interface SettingsModalProps {
@@ -298,7 +299,7 @@ export function SettingsModal({
 
         <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-neutral-50 dark:bg-[#161616]">
           <span className="text-xs font-mono tabular-nums text-neutral-400 dark:text-neutral-500">
-            Aeon v0.1.13
+            Aeon v{APP_VERSION}
           </span>
           <button
             type="button"
