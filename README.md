@@ -1,4 +1,6 @@
+
 # Aeon
+(vibe coded)
 
 A lightweight, local-first calendar app that reads and writes standard `.ics` files directly from your folders.
 
