@@ -4,6 +4,11 @@ import { DayView } from './components/DayView.tsx';
 import { EventInspectorDrawer } from './components/EventInspectorDrawer.tsx';
 import { EventModal } from './components/EventModal.tsx';
 import { MonthView } from './components/MonthView.tsx';
+import {
+  type ActiveToastNotification,
+  buildToastFromOccurrence,
+  NotificationToasts,
+} from './components/NotificationToasts.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { ShortcutsModal } from './components/ShortcutsModal.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
@@ -52,6 +57,17 @@ import {
   updateRruleWeekday,
   upsertEventInIcsContent,
 } from './lib/ics.ts';
+import {
+  computeDueNotifications,
+  formatReminderLeadLabel,
+  type NotificationSettings,
+  readFiredNotificationIds,
+  readNotificationSettings,
+  sendDesktopNotification,
+  writeFiredNotificationIds,
+  writeNotificationSettings,
+} from './lib/notifications.ts';
+import { bindAudioUnlock, playNotificationSound } from './lib/sound.ts';
 import {
   isTauriRuntime,
   tauriCreateCalendarFile,
@@ -129,6 +145,7 @@ function buildNewEventDraft(
     endTime: toTimeInputString(end),
     allDay,
     rrule: '',
+    reminderMinutes: undefined,
     calendarId,
     newFileName: '',
     status: 'CONFIRMED',
@@ -154,6 +171,7 @@ function buildOccurrenceDraft(
     endTime: toTimeInputString(occ.endDate),
     allDay: evt.allDay,
     rrule: evt.rrule ?? '',
+    reminderMinutes: evt.reminderMinutes,
     calendarId: evt.calendarId,
     newFileName: '',
     status: evt.status ?? 'CONFIRMED',
@@ -240,6 +258,14 @@ export default function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
+  const [notificationSettings, setNotificationSettings] =
+    useState<NotificationSettings>(() => readNotificationSettings());
+  const [toasts, setToasts] = useState<ActiveToastNotification[]>([]);
+  const firedNotificationsRef = useRef<Record<string, number>>(
+    readFiredNotificationIds()
+  );
+  const toastTimeoutsRef = useRef<Map<string, number>>(new Map());
+
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof document === 'undefined') return false;
     return document.documentElement.classList.contains('dark');
@@ -275,6 +301,59 @@ export default function App() {
       return next;
     });
   }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    const timer = toastTimeoutsRef.current.get(id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      toastTimeoutsRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const pushToast = useCallback(
+    (toast: ActiveToastNotification) => {
+      setToasts((prev) => {
+        const filtered = prev.filter((item) => item.id !== toast.id);
+        return [...filtered, toast].slice(-4);
+      });
+      const existingTimer = toastTimeoutsRef.current.get(toast.id);
+      if (existingTimer !== undefined) {
+        window.clearTimeout(existingTimer);
+      }
+      const timer = window.setTimeout(() => {
+        toastTimeoutsRef.current.delete(toast.id);
+        setToasts((prev) => prev.filter((item) => item.id !== toast.id));
+      }, 12_000);
+      toastTimeoutsRef.current.set(toast.id, timer);
+    },
+    []
+  );
+
+  const handleUpdateNotificationSettings = useCallback(
+    (patch: Partial<NotificationSettings>) => {
+      setNotificationSettings((prev) => writeNotificationSettings({ ...prev, ...patch }));
+    },
+    []
+  );
+
+  const handleTestNotification = useCallback(async () => {
+    const id = `aeon-test-${Date.now()}`;
+    pushToast({
+      id,
+      title: 'Aeon Reminder Test',
+      subtitle: 'Notifications and chime are working',
+      colorKey: calendars[0]?.color ?? 'slate',
+    });
+    if (notificationSettings.desktopEnabled) {
+      sendDesktopNotification(
+        'Aeon Reminder Test',
+        'Notifications and chime are working.',
+        id
+      );
+    }
+    await playNotificationSound();
+  }, [calendars, notificationSettings.desktopEnabled, pushToast]);
 
   const scanActiveFolder = useCallback(
     async (
@@ -349,6 +428,75 @@ export default function App() {
     void scanActiveFolder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => bindAudioUnlock(), []);
+
+  useEffect(() => {
+    const timeouts = toastTimeoutsRef.current;
+    return () => {
+      for (const timer of timeouts.values()) {
+        window.clearTimeout(timer);
+      }
+      timeouts.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!notificationSettings.enabled) return;
+
+    const checkDue = () => {
+      const due = computeDueNotifications(
+        events,
+        calendars,
+        notificationSettings,
+        firedNotificationsRef.current
+      );
+      if (due.length === 0) return;
+
+      const nowMs = Date.now();
+      for (const item of due) {
+        firedNotificationsRef.current[item.id] = nowMs;
+      }
+      writeFiredNotificationIds(firedNotificationsRef.current);
+
+      for (const item of due) {
+        const cal = calendars.find(
+          (c) => c.id === item.occurrence.event.calendarId
+        );
+        pushToast(
+          buildToastFromOccurrence(
+            item.id,
+            item.occurrence,
+            item.leadMinutes,
+            cal
+          )
+        );
+        if (notificationSettings.desktopEnabled) {
+          const leadText =
+            item.leadMinutes === 0
+              ? 'Starting now'
+              : formatReminderLeadLabel(item.leadMinutes);
+          const loc = item.occurrence.event.location
+            ? ` · ${item.occurrence.event.location}`
+            : '';
+          sendDesktopNotification(
+            item.occurrence.event.summary,
+            `${leadText}${loc}`,
+            item.id,
+            () => setSelectedOccurrence(item.occurrence)
+          );
+        }
+      }
+
+      if (notificationSettings.soundEnabled) {
+        void playNotificationSound();
+      }
+    };
+
+    checkDue();
+    const intervalId = window.setInterval(checkDue, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [calendars, events, notificationSettings, pushToast]);
 
   const dismissAllOverlays = useCallback(() => {
     setEventModalState(null);
@@ -561,6 +709,7 @@ export default function App() {
       end: endVal,
       allDay: draft.allDay,
       rrule: draft.rrule || undefined,
+      reminderMinutes: draft.reminderMinutes,
       status: draft.status,
     };
 
@@ -699,6 +848,7 @@ export default function App() {
           end: endVal,
           allDay: draft.allDay,
           rrule: draft.rrule || undefined,
+          reminderMinutes: draft.reminderMinutes,
           status: draft.status,
         }),
       });
@@ -721,6 +871,7 @@ export default function App() {
           end: endVal,
           allDay: draft.allDay,
           rrule: draft.rrule || undefined,
+          reminderMinutes: draft.reminderMinutes,
           status: draft.status,
         }),
       });
@@ -794,6 +945,7 @@ export default function App() {
         rrule: nextRrule,
         status: evt.status ?? 'CONFIRMED',
         categories: evt.categories,
+        reminderMinutes: evt.reminderMinutes,
       };
 
       try {
@@ -1304,6 +1456,9 @@ export default function App() {
           onChangeFirstDay={handleChangeFirstDay}
           isDark={isDark}
           onToggleTheme={handleSetTheme}
+          notificationSettings={notificationSettings}
+          onUpdateNotificationSettings={handleUpdateNotificationSettings}
+          onTestNotification={handleTestNotification}
           onPickLocalFolder={handlePickLocalFolder}
           onMountNativeFolderFiles={handleMountNativeFolderFiles}
           onCreateCalendarFile={handleCreateCalendarFile}
@@ -1314,6 +1469,12 @@ export default function App() {
       {shortcutsModalOpen && (
         <ShortcutsModal onClose={() => setShortcutsModalOpen(false)} />
       )}
+
+      <NotificationToasts
+        items={toasts}
+        onDismiss={dismissToast}
+        onInspectOccurrence={setSelectedOccurrence}
+      />
 
       {contextMenu && (
         <ContextMenu

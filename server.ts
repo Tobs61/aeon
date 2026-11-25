@@ -85,6 +85,16 @@ function normalizeEventStatus(
     : 'CONFIRMED';
 }
 
+function normalizeReminderMinutes(
+  value: unknown
+): number | null | undefined {
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+  return undefined;
+}
+
 function isValidRelativeIcsPath(rel: string): boolean {
   if (!rel || rel.includes('..') || rel.startsWith('/') || rel.includes('\\')) {
     return false;
@@ -512,6 +522,7 @@ async function startServer(): Promise<void> {
         allDay,
         rrule,
         status,
+        reminderMinutes,
       } = req.body ?? {};
 
       if (!summary || !String(summary).trim()) {
@@ -548,6 +559,7 @@ async function startServer(): Promise<void> {
         allDay: Boolean(allDay),
         rrule: rrule ? String(rrule) : undefined,
         status: normalizeEventStatus(status),
+        reminderMinutes: normalizeReminderMinutes(reminderMinutes),
       });
 
       await fs.writeFile(destPath, updatedRaw, 'utf8');
@@ -577,6 +589,7 @@ async function startServer(): Promise<void> {
         allDay,
         rrule,
         status,
+        reminderMinutes,
       } = req.body ?? {};
 
       const targetRel = newFileName
@@ -609,6 +622,7 @@ async function startServer(): Promise<void> {
         allDay: Boolean(allDay),
         rrule: rrule ? String(rrule) : undefined,
         status: normalizeEventStatus(status),
+        reminderMinutes: normalizeReminderMinutes(reminderMinutes),
       };
 
       if (oldFullPath !== newFullPath) {

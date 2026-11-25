@@ -45,6 +45,8 @@ export interface IcsEvent {
   rrule?: string;
   categories?: string[];
   status?: 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED';
+  /** Minutes before event start for reminder; undefined = use app default, null = explicit none */
+  reminderMinutes?: number | null;
   calendarId: string;
   /** Filename only, e.g. "work.ics" */
   fileName: string;
@@ -72,6 +74,7 @@ export interface EventDraft {
   endTime: string;   // HH:mm
   allDay: boolean;
   rrule: string;
+  reminderMinutes?: number | null;
   /** Target calendar ID or "__new__" */
   calendarId: string;
   /** Used when calendarId === "__new__" */

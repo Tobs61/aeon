@@ -78,7 +78,7 @@ export function TitleBar({
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.detail > 1) return;
     const target = e.target as HTMLElement | null;
     if (target?.closest('button')) return;
     if (tauri) {

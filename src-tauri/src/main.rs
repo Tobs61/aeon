@@ -14,7 +14,7 @@ const COLOR_CYCLE: [&str; 8] = [
 
 fn calendar_name_key(file_name_or_path: &str) -> String {
     let base = file_name_or_path
-        .rsplit('/')
+        .rsplit(['/', '\\'])
         .next()
         .unwrap_or(file_name_or_path);
     let stem = base

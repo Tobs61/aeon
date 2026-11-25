@@ -4,9 +4,10 @@ A lightweight, local-first calendar app that reads and writes standard `.ics` fi
 
 ## Features
 
-- **Folder-first `.ics` storage**: Recursively scans a folder for `.ics` files and writes changes straight back to standard `VCALENDAR` / `VEVENT` files. Works in desktop mode (Tauri) or in the browser (local workspace server or browser folder picker).
+- **Folder-first `.ics` storage**: Recursively scans a folder for `.ics` files and writes changes straight back to standard `VCALENDAR` / `VEVENT` files. Works on desktop (Linux, macOS, Windows via Tauri) or in any modern browser.
 - **Four calendar views**: Day (`1` / `D`), Week (`2` / `W`), Month (`3` / `M`), and Year (`4` / `Y`).
 - **Direct scheduling**: Click any slot to create an event, drag events to reschedule across days/times, and drag event edges in Day/Week views to resize duration.
+- **Reminders & sound**: Configurable event notifications (in-app banners, desktop alerts, and notification chime) with standard `VALARM` `.ics` persistence.
 - **Recurrence & inspection**: Supports standard `RRULE` schedules (`DAILY`, `WEEKLY` with `BYDAY`, `MONTHLY`, `YEARLY`), live `.ics` preview in the editor, and copy/download of raw `.ics` source.
 - **Workspace polish**: Per-calendar color coding and visibility toggles, search filter (`/`), custom window title bar with version display, context-aware right-click menu, and light/dark monochrome themes (`\`).
 

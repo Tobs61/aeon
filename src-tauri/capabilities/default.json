@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default desktop capabilities for Aeon on Debian Wayland",
+  "description": "Default desktop capabilities for Aeon across Linux, macOS, and Windows",
   "windows": ["main"],
   "permissions": [
     "core:default",

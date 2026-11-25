@@ -40,9 +40,9 @@ function readAppVersion(): string {
   try {
     const pkgRaw = fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8');
     const pkg = JSON.parse(pkgRaw) as { version?: string };
-    return pkg.version || '0.1.14';
+    return pkg.version || '0.1.15';
   } catch {
-    return '0.1.14';
+    return '0.1.15';
   }
 }
 
@@ -95,6 +95,7 @@ function runStep(cmd: string, args: string[], dryRun: boolean): void {
     cwd: ROOT,
     stdio: 'inherit',
     env: process.env,
+    shell: process.platform === 'win32' && !path.isAbsolute(cmd),
   });
 
   if (result.error) {
@@ -102,6 +103,15 @@ function runStep(cmd: string, args: string[], dryRun: boolean): void {
   }
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
+  }
+}
+
+function runTauri(args: string[], dryRun: boolean): void {
+  const tauriEntry = path.join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
+  if (fs.existsSync(tauriEntry)) {
+    runStep(process.execPath, [tauriEntry, ...args], dryRun);
+  } else {
+    runStep('bunx', ['tauri', ...args], dryRun);
   }
 }
 
@@ -144,7 +154,7 @@ function parseCli(argv: string[]): {
 
 function buildFlatpak(version: string, dryRun: boolean, debAlreadyBuilt: boolean): void {
   if (!debAlreadyBuilt) {
-    runStep('bunx', ['tauri', 'build', '--bundles', 'deb'], dryRun);
+    runTauri(['build', '--bundles', 'deb'], dryRun);
   }
 
   const outDir = path.join(ROOT, 'dist-flatpak');
@@ -183,9 +193,9 @@ function main(): void {
     chosenTargets.length === 0 ||
     (chosenTargets.length === 1 && chosenTargets[0] === 'web')
   ) {
-    const viteBin = path.join(ROOT, 'node_modules', '.bin', 'vite');
-    if (fs.existsSync(viteBin)) {
-      runStep(viteBin, ['build'], dryRun);
+    const viteEntry = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+    if (fs.existsSync(viteEntry)) {
+      runStep(process.execPath, [viteEntry, 'build'], dryRun);
     } else {
       runStep('bunx', ['vite', 'build'], dryRun);
     }
@@ -201,7 +211,7 @@ function main(): void {
   const wantsFlatpak = desktopTargets.includes('flatpak');
 
   if (tauriBundles.length > 0) {
-    runStep('bunx', ['tauri', 'build', '--bundles', tauriBundles.join(',')], dryRun);
+    runTauri(['build', '--bundles', tauriBundles.join(',')], dryRun);
   }
 
   if (wantsFlatpak) {

@@ -1,4 +1,5 @@
 import {
+  Bell,
   Calendar,
   Check,
   ChevronDown,
@@ -22,6 +23,7 @@ import {
   formatTimeShort,
   isSameDay,
 } from '../lib/dateUtils.ts';
+import { formatReminderLeadLabel } from '../lib/notifications.ts';
 import type { IcsCalendar, IcsOccurrence } from '../types/calendar.ts';
 
 interface EventInspectorDrawerProps {
@@ -216,6 +218,18 @@ export function EventInspectorDrawer({
                 <Repeat className="w-4 h-4 text-neutral-400 mt-0.5 shrink-0" />
                 <div className="text-sm text-neutral-800 dark:text-neutral-200 leading-snug">
                   {recurrenceLabel}
+                </div>
+              </div>
+            )}
+
+            {/* Reminder */}
+            {event.reminderMinutes !== undefined && (
+              <div className="flex items-start gap-3">
+                <Bell className="w-4 h-4 text-neutral-400 mt-0.5 shrink-0" />
+                <div className="text-sm text-neutral-800 dark:text-neutral-200 leading-snug">
+                  {event.reminderMinutes === null
+                    ? 'No reminder'
+                    : formatReminderLeadLabel(event.reminderMinutes)}
                 </div>
               </div>
             )}

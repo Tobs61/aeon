@@ -17,14 +17,14 @@ modules:
   - name: aeon
     buildsystem: simple
     build-commands:
-      - ar x Aeon_0.1.14_amd64.deb
+      - ar x aeon_0.1.15_amd64.deb || ar x Aeon_0.1.15_amd64.deb
       - tar -xf data.tar.* -C /
       - mv /usr/bin/aeon /app/bin/aeon
       - mkdir -p /app/share/applications /app/share/icons
       - cp -r /usr/share/icons/hicolor /app/share/icons/
-      - install -Dm644 /usr/share/applications/Aeon.desktop /app/share/applications/com.kael.aeon.desktop
+      - '[ -f /usr/share/applications/aeon.desktop ] && DESK=/usr/share/applications/aeon.desktop || DESK=/usr/share/applications/Aeon.desktop; install -Dm644 "$DESK" /app/share/applications/com.kael.aeon.desktop'
       - desktop-file-edit --set-icon=com.kael.aeon /app/share/applications/com.kael.aeon.desktop
       - mv /app/share/icons/hicolor/scalable/apps/aeon.svg /app/share/icons/hicolor/scalable/apps/com.kael.aeon.svg
     sources:
       - type: file
-        path: src-tauri/target/release/bundle/deb/Aeon_0.1.14_amd64.deb
+        path: src-tauri/target/release/bundle/deb/aeon_0.1.15_amd64.deb

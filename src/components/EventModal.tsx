@@ -23,6 +23,21 @@ const RRULE_OPTIONS = [
   { label: 'Every year', value: 'FREQ=YEARLY' },
 ];
 
+const REMINDER_OPTIONS: Array<{
+  label: string;
+  value: number | null | undefined;
+}> = [
+  { label: 'Use default reminder', value: undefined },
+  { label: 'No reminder', value: null },
+  { label: 'At start time', value: 0 },
+  { label: '5 minutes before', value: 5 },
+  { label: '10 minutes before', value: 10 },
+  { label: '15 minutes before', value: 15 },
+  { label: '30 minutes before', value: 30 },
+  { label: '1 hour before', value: 60 },
+  { label: '1 day before', value: 1440 },
+];
+
 export function EventModal({
   calendars,
   initialDraft,
@@ -35,11 +50,12 @@ export function EventModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<
-    'calendar' | 'recurrence' | null
+    'calendar' | 'recurrence' | 'reminder' | null
   >(null);
 
   const calendarDropdownRef = useRef<HTMLDivElement>(null);
   const recurrenceDropdownRef = useRef<HTMLDivElement>(null);
+  const reminderDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!openDropdown) return;
@@ -57,6 +73,12 @@ export function EventModal({
         openDropdown === 'recurrence' &&
         recurrenceDropdownRef.current &&
         !recurrenceDropdownRef.current.contains(target)
+      ) {
+        setOpenDropdown(null);
+      } else if (
+        openDropdown === 'reminder' &&
+        reminderDropdownRef.current &&
+        !reminderDropdownRef.current.contains(target)
       ) {
         setOpenDropdown(null);
       }
@@ -91,6 +113,17 @@ export function EventModal({
     [draft.rrule]
   );
 
+  const selectedReminderLabel = useMemo(() => {
+    const match = REMINDER_OPTIONS.find(
+      (opt) => opt.value === draft.reminderMinutes
+    );
+    if (match) return match.label;
+    if (typeof draft.reminderMinutes === 'number') {
+      return `${draft.reminderMinutes} minutes before`;
+    }
+    return 'Use default reminder';
+  }, [draft.reminderMinutes]);
+
   const computedEndForIcs = useMemo(
     () => draftEndToIcsEnd(draft.endDate, draft.endTime, draft.allDay),
     [draft.allDay, draft.endDate, draft.endTime]
@@ -120,6 +153,7 @@ export function EventModal({
       end: computedEndForIcs,
       allDay: draft.allDay,
       rrule: draft.rrule || undefined,
+      reminderMinutes: draft.reminderMinutes,
       status: draft.status,
     });
   }, [draft, computedEndForIcs, editingEvent]);
@@ -441,22 +475,22 @@ export function EventModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1">
-                Location
-              </label>
-              <input
-                type="text"
-                value={draft.location}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, location: e.target.value }))
-                }
-                placeholder="Room, address, or link"
-                className="w-full h-9 px-3 text-sm rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#181818] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-400/30"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1">
+              Location
+            </label>
+            <input
+              type="text"
+              value={draft.location}
+              onChange={(e) =>
+                setDraft((prev) => ({ ...prev, location: e.target.value }))
+              }
+              placeholder="Room, address, or link"
+              className="w-full h-9 px-3 text-sm rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#181818] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-400/30"
+            />
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Custom Monochrome Recurrence Selector */}
             <div ref={recurrenceDropdownRef} className="relative">
               <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1">
@@ -497,6 +531,68 @@ export function EventModal({
                         aria-selected={active}
                         onClick={() => {
                           setDraft((prev) => ({ ...prev, rrule: opt.value }));
+                          setOpenDropdown(null);
+                        }}
+                        className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                          active
+                            ? 'bg-neutral-100 dark:bg-[#242424] text-neutral-900 dark:text-white font-medium'
+                            : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/75 dark:hover:bg-[#222222]'
+                        }`}
+                      >
+                        <span className="truncate">{opt.label}</span>
+                        {active && (
+                          <Check className="w-3.5 h-3.5 text-neutral-900 dark:text-white shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Custom Monochrome Reminder Selector */}
+            <div ref={reminderDropdownRef} className="relative">
+              <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1">
+                Reminder
+              </label>
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={openDropdown === 'reminder'}
+                onClick={() =>
+                  setOpenDropdown((prev) =>
+                    prev === 'reminder' ? null : 'reminder'
+                  )
+                }
+                className="flex w-full h-9 items-center justify-between gap-2 px-3 text-sm rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#181818] text-neutral-900 dark:text-neutral-100 hover:bg-neutral-100/70 dark:hover:bg-[#1f1f1f] focus:outline-none focus:ring-2 focus:ring-neutral-400/30 focus:border-neutral-500 transition-colors"
+              >
+                <span className="truncate">{selectedReminderLabel}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-neutral-400 shrink-0 transition-transform ${
+                    openDropdown === 'reminder' ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {openDropdown === 'reminder' && (
+                <div
+                  role="listbox"
+                  aria-label="Reminder"
+                  className="absolute left-0 right-0 top-full mt-1.5 z-50 max-h-52 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#181818] p-1 shadow-xl"
+                >
+                  {REMINDER_OPTIONS.map((opt) => {
+                    const active = draft.reminderMinutes === opt.value;
+                    return (
+                      <button
+                        key={String(opt.value)}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => {
+                          setDraft((prev) => ({
+                            ...prev,
+                            reminderMinutes: opt.value,
+                          }));
                           setOpenDropdown(null);
                         }}
                         className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${

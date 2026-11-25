@@ -25,6 +25,7 @@ export interface SerializableVEvent {
   rrule?: string;
   status?: 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED';
   categories?: string[];
+  reminderMinutes?: number | null;
 }
 
 function unfoldLines(raw: string): string[] {
@@ -176,34 +177,86 @@ export function dateToIsoLocal(date: Date, allDay: boolean): string {
   )}`;
 }
 
+function parseAlarmTriggerMinutes(rawTrigger: string): number | undefined {
+  const val = rawTrigger.trim().toUpperCase();
+  if (!val) return undefined;
+  if (val === 'PT0S' || val === '-PT0S' || val === 'P0D' || val === '-P0D') {
+    return 0;
+  }
+  const match =
+    /^(-)?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
+      val
+    );
+  if (!match) return undefined;
+  const isNegative = Boolean(match[1]);
+  const weeks = Number(match[2] || 0);
+  const days = Number(match[3] || 0);
+  const hours = Number(match[4] || 0);
+  const mins = Number(match[5] || 0);
+  const secs = Number(match[6] || 0);
+  const totalMinutes = Math.round(
+    (weeks * 7 + days) * 1440 + hours * 60 + mins + secs / 60
+  );
+  if (totalMinutes === 0) return 0;
+  return isNegative ? totalMinutes : undefined;
+}
+
+function formatAlarmTrigger(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  if (m === 0) return 'PT0S';
+  if (m % 1440 === 0) return `-P${m / 1440}D`;
+  if (m % 60 === 0) return `-PT${m / 60}H`;
+  return `-PT${m}M`;
+}
+
 export function parseIcsContent(raw: string, meta: ParseMeta): IcsEvent[] {
   const lines = unfoldLines(raw);
   const events: IcsEvent[] = [];
 
   let inEvent = false;
+  let inAlarm = false;
   let currentProps: Record<
     string,
     { value: string; params: Record<string, string> }
   > = {};
+  let currentTrigger: string | undefined;
 
   for (const line of lines) {
     if (line === 'BEGIN:VEVENT') {
       inEvent = true;
+      inAlarm = false;
       currentProps = {};
+      currentTrigger = undefined;
       continue;
     }
 
     if (line === 'END:VEVENT') {
       if (inEvent) {
-        const evt = buildEventFromProps(currentProps, raw, meta);
+        const evt = buildEventFromProps(
+          currentProps,
+          currentTrigger,
+          raw,
+          meta
+        );
         if (evt) events.push(evt);
       }
       inEvent = false;
+      inAlarm = false;
       currentProps = {};
+      currentTrigger = undefined;
       continue;
     }
 
     if (!inEvent) continue;
+
+    if (line === 'BEGIN:VALARM') {
+      inAlarm = true;
+      continue;
+    }
+    if (line === 'END:VALARM') {
+      inAlarm = false;
+      continue;
+    }
 
     const colonIndex = line.indexOf(':');
     if (colonIndex === -1) continue;
@@ -212,8 +265,15 @@ export function parseIcsContent(raw: string, meta: ParseMeta): IcsEvent[] {
     const value = line.slice(colonIndex + 1);
     const parts = left.split(';');
     const propName = parts[0].toUpperCase();
-    const params: Record<string, string> = {};
 
+    if (inAlarm) {
+      if (propName === 'TRIGGER' && currentTrigger === undefined) {
+        currentTrigger = value;
+      }
+      continue;
+    }
+
+    const params: Record<string, string> = {};
     for (let i = 1; i < parts.length; i++) {
       const eqIdx = parts[i].indexOf('=');
       if (eqIdx !== -1) {
@@ -231,6 +291,7 @@ export function parseIcsContent(raw: string, meta: ParseMeta): IcsEvent[] {
 
 function buildEventFromProps(
   props: Record<string, { value: string; params: Record<string, string> }>,
+  alarmTrigger: string | undefined,
   rawIcs: string,
   meta: ParseMeta
 ): IcsEvent | null {
@@ -288,6 +349,15 @@ function buildEventFromProps(
       ? rawStatus
       : 'CONFIRMED';
 
+  const explicitNone =
+    props['X-AEON-REMINDER']?.value?.trim().toUpperCase() === 'NONE';
+  const parsedTrigger =
+    alarmTrigger !== undefined
+      ? parseAlarmTriggerMinutes(alarmTrigger)
+      : undefined;
+  const reminderMinutes: number | null | undefined =
+    parsedTrigger !== undefined ? parsedTrigger : explicitNone ? null : undefined;
+
   return {
     uid,
     summary,
@@ -299,6 +369,7 @@ function buildEventFromProps(
     rrule: props.RRULE?.value?.trim(),
     categories,
     status,
+    reminderMinutes,
     calendarId: meta.calendarId,
     fileName: meta.fileName,
     relativePath: meta.relativePath,
@@ -359,6 +430,19 @@ function buildVEventLines(event: SerializableVEvent): string[] {
   if (event.rrule?.trim()) {
     lines.push(`RRULE:${event.rrule.trim()}`);
   }
+  if (event.reminderMinutes === null) {
+    lines.push('X-AEON-REMINDER:NONE');
+  } else if (
+    typeof event.reminderMinutes === 'number' &&
+    Number.isFinite(event.reminderMinutes) &&
+    event.reminderMinutes >= 0
+  ) {
+    lines.push('BEGIN:VALARM');
+    lines.push('ACTION:DISPLAY');
+    lines.push(`DESCRIPTION:${escapeIcsText(event.summary || 'Reminder')}`);
+    lines.push(`TRIGGER:${formatAlarmTrigger(event.reminderMinutes)}`);
+    lines.push('END:VALARM');
+  }
 
   lines.push('END:VEVENT');
   return lines;
@@ -401,6 +485,7 @@ function toSerializableVEvent(item: IcsEvent): SerializableVEvent {
     rrule: item.rrule,
     status: item.status,
     categories: item.categories,
+    reminderMinutes: item.reminderMinutes,
   };
 }
 

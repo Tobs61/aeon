@@ -275,7 +275,7 @@ export async function scanWebkitFolderFiles(
     const relFull =
       (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
       file.name;
-    const segments = relFull.split('/').filter(Boolean);
+    const segments = relFull.split(/[\\/]+/).filter(Boolean);
     if (segments.length > 1) {
       folderName = segments[0];
     }

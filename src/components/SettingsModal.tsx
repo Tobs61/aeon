@@ -1,13 +1,22 @@
 import {
+  Bell,
   CheckCircle2,
   FolderOpen,
   Moon,
   Plus,
   Sun,
+  Volume2,
   X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { isDirectoryPickerSupported } from '../lib/fsAccess.ts';
+import {
+  type DefaultReminderMinutes,
+  type DesktopPermissionState,
+  getDesktopNotificationPermission,
+  type NotificationSettings,
+  requestDesktopNotificationPermission,
+} from '../lib/notifications.ts';
 import { isTauriRuntime } from '../lib/tauriRuntime.ts';
 import { APP_VERSION } from '../lib/version.ts';
 import type { FirstDayOfWeek } from '../types/calendar.ts';
@@ -19,6 +28,9 @@ interface SettingsModalProps {
   onChangeFirstDay: (day: FirstDayOfWeek) => void;
   isDark: boolean;
   onToggleTheme: (dark: boolean) => void;
+  notificationSettings: NotificationSettings;
+  onUpdateNotificationSettings: (patch: Partial<NotificationSettings>) => void;
+  onTestNotification: () => Promise<void>;
   onPickLocalFolder: () => Promise<void>;
   onMountNativeFolderFiles: (files: FileList) => Promise<void>;
   onCreateCalendarFile: (name: string) => Promise<void>;
@@ -31,6 +43,19 @@ const WEEK_START_OPTIONS: Array<{ label: string; value: FirstDayOfWeek }> = [
   { label: 'Saturday', value: 6 },
 ];
 
+const DEFAULT_REMINDER_OPTIONS: Array<{
+  label: string;
+  value: DefaultReminderMinutes;
+}> = [
+  { label: 'Off', value: -1 },
+  { label: 'At start', value: 0 },
+  { label: '5m', value: 5 },
+  { label: '10m', value: 10 },
+  { label: '15m', value: 15 },
+  { label: '30m', value: 30 },
+  { label: '1h', value: 60 },
+];
+
 export function SettingsModal({
   rootFolderLabel,
   calendarCount,
@@ -38,6 +63,9 @@ export function SettingsModal({
   onChangeFirstDay,
   isDark,
   onToggleTheme,
+  notificationSettings,
+  onUpdateNotificationSettings,
+  onTestNotification,
   onPickLocalFolder,
   onMountNativeFolderFiles,
   onCreateCalendarFile,
@@ -47,6 +75,9 @@ export function SettingsModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [desktopPerm, setDesktopPerm] = useState<DesktopPermissionState>(() =>
+    getDesktopNotificationPermission()
+  );
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const canUseDirectDirectoryApi =
@@ -257,7 +288,155 @@ export function SettingsModal({
             </div>
           </section>
 
-          {/* Section 3: Theme */}
+          {/* Section 3: Notifications & Sound */}
+          <section className="pt-5 border-t border-neutral-200 dark:border-neutral-800 space-y-3.5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xs font-semibold text-neutral-900 dark:text-white">
+                  Event Notifications
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  In-app alerts and desktop notifications before events start.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void onTestNotification()}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-xl border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>Test</span>
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={notificationSettings.enabled}
+                  onClick={() =>
+                    onUpdateNotificationSettings({
+                      enabled: !notificationSettings.enabled,
+                    })
+                  }
+                  className={`px-2.5 py-1 text-xs font-medium rounded-xl border transition-colors ${
+                    notificationSettings.enabled
+                      ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-950'
+                      : 'border-neutral-200 dark:border-neutral-800 text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  }`}
+                >
+                  {notificationSettings.enabled ? 'On' : 'Off'}
+                </button>
+              </div>
+            </div>
+
+            {notificationSettings.enabled && (
+              <div className="space-y-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#171717] p-3.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs font-medium text-neutral-800 dark:text-neutral-200">
+                    <Volume2 className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400" />
+                    <span>Notification sound</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={notificationSettings.soundEnabled}
+                    onClick={() =>
+                      onUpdateNotificationSettings({
+                        soundEnabled: !notificationSettings.soundEnabled,
+                      })
+                    }
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-colors ${
+                      notificationSettings.soundEnabled
+                        ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-950'
+                        : 'border-neutral-200 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400'
+                    }`}
+                  >
+                    {notificationSettings.soundEnabled ? 'Enabled' : 'Muted'}
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">
+                    Default reminder timing
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 p-0.5 rounded-xl bg-neutral-100 dark:bg-[#1e1e1e] border border-neutral-200 dark:border-neutral-800">
+                    {DEFAULT_REMINDER_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          onUpdateNotificationSettings({
+                            defaultReminderMinutes: opt.value,
+                          })
+                        }
+                        className={`flex-1 min-w-[44px] px-2 py-1 text-[11px] font-medium rounded-lg transition-colors whitespace-nowrap ${
+                          notificationSettings.defaultReminderMinutes ===
+                          opt.value
+                            ? 'bg-white dark:bg-[#2a2a2a] text-neutral-900 dark:text-white shadow-xs'
+                            : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-1 border-t border-neutral-200/80 dark:border-neutral-800">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-neutral-800 dark:text-neutral-200">
+                      Desktop alerts
+                    </div>
+                    <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                      {desktopPerm === 'granted'
+                        ? 'OS notifications enabled'
+                        : desktopPerm === 'denied'
+                          ? 'Blocked in OS/browser; using in-app banners'
+                          : desktopPerm === 'unsupported'
+                            ? 'Using in-app banners in this view'
+                            : 'Allow OS notifications for native alerts'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {desktopPerm === 'default' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const next = await requestDesktopNotificationPermission();
+                          setDesktopPerm(next);
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 hover:opacity-90 transition-opacity"
+                      >
+                        Allow
+                      </button>
+                    )}
+                    {desktopPerm !== 'unsupported' && (
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={notificationSettings.desktopEnabled}
+                        onClick={() =>
+                          onUpdateNotificationSettings({
+                            desktopEnabled:
+                              !notificationSettings.desktopEnabled,
+                          })
+                        }
+                        className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-colors ${
+                          notificationSettings.desktopEnabled
+                            ? 'border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-950'
+                            : 'border-neutral-200 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400'
+                        }`}
+                      >
+                        {notificationSettings.desktopEnabled ? 'On' : 'Off'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Section 4: Theme */}
           <section className="pt-5 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-4">
             <div>
               <h3 className="text-xs font-semibold text-neutral-900 dark:text-white">
